@@ -1,0 +1,38 @@
+{
+  "id": "suspicious_person",
+  "name": "Suspicious Person Detection - Security Threat Response",
+  "description": "Volunteer reports suspicious person, triggering LVMPD response and perimeter security",
+  "seed": 303,
+  "start_time": "2024-06-01 08:00:00",
+  "duration_hours": 6,
+  "step_duration_seconds": 10,
+  "agents": {
+    "athletes": 100,
+    "volunteers": 35,
+    "hotel_rovers": 5,
+    "lvmpd_units": 4,
+    "amr_units": 2,
+    "buses": 6
+  },
+  "venues": {
+    "las_airport": {"lat": 36.084, "lon": -115.153, "name": "McCarran International Airport"},
+    "mgm_grand": {"lat": 36.1027, "lon": -115.171, "name": "MGM Grand Hotel"},
+    "unlv_cox": {"lat": 36.102, "lon": -115.150, "name": "UNLV Cox Pavilion"},
+    "thomas_mack": {"lat": 36.104, "lon": -115.152, "name": "Thomas & Mack Center"}
+  },
+  "weather": {
+    "temp_C": 28,
+    "heat_alert": false
+  },
+  "events": [
+    {"t": "08:00", "type": "arrival_batch", "count": 50},
+    {"t": "09:00", "type": "arrival_batch", "count": 50},
+    {"t": "12:45", "type": "event_start", "venue": "unlv_cox"},
+    {"t": "13:15", "type": "suspicious_person", "location": [36.102, -115.150]}
+  ],
+  "access_control": {
+    "athlete_badge_required": true,
+    "hotel_floor_restricted": true
+  }
+}
+

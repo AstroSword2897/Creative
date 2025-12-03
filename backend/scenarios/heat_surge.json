@@ -1,0 +1,66 @@
+{
+  "id": "heat_surge_day",
+  "name": "Heat Surge - High Temperature Medical Events",
+  "description": "Extreme heat conditions increase medical event probability, testing cooling response",
+  "seed": 101,
+  "start_time": "2024-06-01 08:00:00",
+  "duration_hours": 8,
+  "step_duration_seconds": 10,
+  "agents": {
+    "athletes": 120,
+    "volunteers": 40,
+    "hotel_rovers": 6,
+    "lvmpd_units": 3,
+    "amr_units": 3,
+    "buses": 8
+  },
+  "venues": {
+    "harry_reid_airport": {"lat": 36.084, "lon": -115.153, "name": "Harry Reid International Airport (LAS)", "type": "airport"},
+    "mgm_grand": {"lat": 36.1027, "lon": -115.171, "name": "MGM Grand Hotel & Casino", "type": "hotel"},
+    "westgate": {"lat": 36.1144, "lon": -115.1689, "name": "Westgate Las Vegas Resort & Casino", "type": "hotel"},
+    "south_point": {"lat": 36.0125, "lon": -115.1753, "name": "South Point Hotel, Casino & Spa", "type": "hotel"},
+    "venetian": {"lat": 36.1214, "lon": -115.1694, "name": "The Venetian Resort Las Vegas", "type": "hotel"},
+    "unlv_cox": {"lat": 36.102, "lon": -115.150, "name": "UNLV Cox Pavilion", "type": "venue"},
+    "thomas_mack": {"lat": 36.104, "lon": -115.152, "name": "Thomas & Mack Center", "type": "venue"},
+    "umc_hospital": {"lat": 36.1447, "lon": -115.1481, "name": "University Medical Center (UMC)", "type": "hospital"},
+    "sunrise_hospital": {"lat": 36.1694, "lon": -115.1231, "name": "Sunrise Hospital & Medical Center", "type": "hospital"}
+  },
+  "transportation": {
+    "monorail_stations": [
+      {"name": "MGM Grand Station", "lat": 36.1027, "lon": -115.171},
+      {"name": "Convention Center Station", "lat": 36.125, "lon": -115.165}
+    ],
+    "rtc_bus_routes": [
+      {"name": "Strip Route", "stops": ["harry_reid_airport", "mgm_grand", "unlv_cox"]}
+    ]
+  },
+  "public_safety": {
+    "lvmpd_commands": [
+      {"name": "South Central Area Command", "lat": 36.102, "lon": -115.150}
+    ],
+    "fire_rescue_stations": [
+      {"name": "Las Vegas Fire & Rescue Station 5", "lat": 36.102, "lon": -115.150}
+    ],
+    "amr_units": [
+      {"name": "AMR Las Vegas Unit", "base_lat": 36.102, "base_lon": -115.150}
+    ]
+  },
+  "weather": {
+    "temp_C": 42,
+    "heat_alert": true
+  },
+  "events": [
+    {"t": "08:00", "type": "arrival_batch", "count": 40, "location": "harry_reid_airport"},
+    {"t": "08:30", "type": "arrival_batch", "count": 40, "location": "harry_reid_airport"},
+    {"t": "09:00", "type": "arrival_batch", "count": 40, "location": "harry_reid_airport"},
+    {"t": "12:45", "type": "event_start", "venue": "unlv_cox"},
+    {"t": "13:30", "type": "medical_event", "venue": "unlv_cox", "severity": 2, "response": "amr"},
+    {"t": "14:15", "type": "medical_event", "venue": "unlv_cox", "severity": 1, "response": "fire_rescue"},
+    {"t": "15:00", "type": "medical_event", "venue": "thomas_mack", "severity": 2, "response": "amr"}
+  ],
+  "access_control": {
+    "athlete_badge_required": true,
+    "hotel_floor_restricted": true
+  }
+}
+

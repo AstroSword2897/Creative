@@ -1,0 +1,584 @@
+"""
+Main simulation model for Special Olympics Las Vegas.
+Coordinates agents, events, and metrics.
+"""
+
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+import random
+from mesa import Model
+from mesa.time import RandomActivation
+from mesa.space import ContinuousSpace
+
+from .agents import (
+    Athlete, Volunteer, HotelSecurity, LVMPDUnit, AMRUnit, Bus
+)
+from .route_planner import RoutePlanner
+
+
+class SpecialOlympicsModel(Model):
+    """Main simulation model."""
+    
+    def __init__(self, scenario_config: Dict[str, Any]):
+        super().__init__()
+        
+        # Time management
+        self.start_time = datetime.strptime(
+            scenario_config.get("start_time", "2024-06-01 08:00:00"),
+            "%Y-%m-%d %H:%M:%S"
+        )
+        self.current_time = self.start_time
+        self.step_duration = timedelta(seconds=scenario_config.get("step_duration_seconds", 10))
+        self.end_time = self.start_time + timedelta(
+            hours=scenario_config.get("duration_hours", 8)
+        )
+        
+        # Random seed
+        random.seed(scenario_config.get("seed", 42))
+        
+        # Weather
+        self.weather = scenario_config.get("weather", {"temp_C": 25, "heat_alert": False})
+        
+        # Venues
+        self.venues = scenario_config.get("venues", {})
+        
+        # Space (continuous 2D space for Las Vegas area)
+        # Bounding box: roughly Las Vegas area
+        self.space = ContinuousSpace(
+            x_max=1.0, y_max=1.0, torus=False
+        )
+        
+        # Scheduler
+        self.schedule = RandomActivation(self)
+        
+        # Route planner
+        self.route_planner = RoutePlanner(self.venues)
+        
+        # Agent tracking
+        self.athletes = []
+        self.volunteers = []
+        self.hotel_security = []
+        self.lvmpd_units = []
+        self.amr_units = []
+        self.buses = []
+        
+        # Events and incidents
+        self.scheduled_events = scenario_config.get("events", [])
+        self.active_incidents = []
+        self.active_alerts = {}  # hotel_id -> list of alerts
+        self.medical_events = []
+        self.completed_transports = []
+        
+        # Metrics
+        self.metrics = {
+            "safety_score": 100.0,
+            "avg_response_time": 0.0,
+            "containment_rate": 1.0,
+            "athlete_delay_minutes": 0.0,
+            "accessibility_coverage": 1.0,
+            "medical_events_count": 0,
+            "incidents_resolved": 0,
+        }
+        
+        # Access control
+        self.access_control = scenario_config.get("access_control", {})
+        
+        # Initialize agents
+        self._initialize_agents(scenario_config.get("agents", {}))
+        
+        # Initialize scheduled events
+        self._initialize_events()
+        
+        # Hospital locations (hardcoded for now)
+        self.hospitals = [
+            (36.1447, -115.1481),  # UMC
+            (36.1694, -115.1231),  # Sunrise Hospital
+        ]
+    
+    def _initialize_agents(self, agent_config: Dict):
+        """Initialize all agents based on scenario config."""
+        agent_id = 0
+        
+        # Athletes
+        athlete_count = agent_config.get("athletes", 0)
+        for i in range(athlete_count):
+            athlete = Athlete(
+                unique_id=agent_id,
+                model=self,
+                mobility=random.choice(["walking", "walking", "wheelchair", "assisted"]),
+                medical_risk=random.uniform(0.05, 0.2),
+            )
+            # Start at airport (Harry Reid International)
+            if "harry_reid_airport" in self.venues:
+                airport = self.venues["harry_reid_airport"]
+                athlete.current_location = (airport["lat"], airport["lon"])
+            elif "las_airport" in self.venues:  # Legacy support
+                airport = self.venues["las_airport"]
+                athlete.current_location = (airport["lat"], airport["lon"])
+            self.athletes.append(athlete)
+            self.schedule.add(athlete)
+            self.space.place_agent(athlete, athlete.current_location)
+            agent_id += 1
+        
+        # Volunteers
+        volunteer_count = agent_config.get("volunteers", 0)
+        for i in range(volunteer_count):
+            volunteer = Volunteer(
+                unique_id=agent_id,
+                model=self,
+                assignment=random.choice(["general", "venue", "transport"]),
+            )
+            # Random initial location
+            volunteer.current_location = (
+                random.uniform(0.3, 0.7),
+                random.uniform(0.3, 0.7)
+            )
+            self.volunteers.append(volunteer)
+            self.schedule.add(volunteer)
+            self.space.place_agent(volunteer, volunteer.current_location)
+            agent_id += 1
+        
+        # Hotel Security
+        hotel_security_count = agent_config.get("hotel_rovers", 0)
+        for i in range(hotel_security_count):
+            hotel_id = f"hotel_{i % 3}"  # Distribute across hotels
+            security = HotelSecurity(
+                unique_id=agent_id,
+                model=self,
+                hotel_id=hotel_id,
+            )
+            # Start at hotel
+            hotel_key = f"{hotel_id}_hotel"
+            if hotel_key in self.venues:
+                hotel = self.venues[hotel_key]
+                security.current_location = (hotel["lat"], hotel["lon"])
+            else:
+                security.current_location = (random.uniform(0.4, 0.6), random.uniform(0.4, 0.6))
+            self.hotel_security.append(security)
+            self.schedule.add(security)
+            self.space.place_agent(security, security.current_location)
+            agent_id += 1
+        
+        # LVMPD Units
+        lvmpd_count = agent_config.get("lvmpd_units", 0)
+        for i in range(lvmpd_count):
+            unit = LVMPDUnit(
+                unique_id=agent_id,
+                model=self,
+            )
+            # Start at central location
+            unit.current_location = (0.5, 0.5)
+            self.lvmpd_units.append(unit)
+            self.schedule.add(unit)
+            self.space.place_agent(unit, unit.current_location)
+            agent_id += 1
+        
+        # AMR Units
+        amr_count = agent_config.get("amr_units", 0)
+        for i in range(amr_count):
+            unit = AMRUnit(
+                unique_id=agent_id,
+                model=self,
+            )
+            # Start at central location
+            unit.current_location = (0.5, 0.5)
+            self.amr_units.append(unit)
+            self.schedule.add(unit)
+            self.space.place_agent(unit, unit.current_location)
+            agent_id += 1
+        
+        # Buses
+        bus_count = agent_config.get("buses", 0)
+        for i in range(bus_count):
+            # Create route between airport and venues
+            route = []
+            airport_key = "harry_reid_airport" if "harry_reid_airport" in self.venues else "las_airport"
+            if airport_key in self.venues and "unlv_cox" in self.venues:
+                airport = self.venues[airport_key]
+                venue = self.venues["unlv_cox"]
+                route = [
+                    (airport["lat"], airport["lon"]),
+                    (venue["lat"], venue["lon"]),
+                ]
+            bus = Bus(
+                unique_id=agent_id,
+                model=self,
+                route=route,
+            )
+            if route:
+                bus.current_location = route[0]
+            self.buses.append(bus)
+            self.schedule.add(bus)
+            if bus.current_location:
+                self.space.place_agent(bus, bus.current_location)
+            agent_id += 1
+    
+    def _initialize_events(self):
+        """Initialize scheduled events."""
+        # Events will be processed during step()
+        pass
+    
+    def step(self):
+        """Advance simulation by one step."""
+        # Advance time
+        self.current_time += self.step_duration
+        
+        # Process scheduled events
+        self._process_scheduled_events()
+        
+        # Step all agents
+        self.schedule.step()
+        
+        # Update metrics
+        self._update_metrics()
+        
+        # Check if simulation should end
+        if self.current_time >= self.end_time:
+            return False
+        return True
+    
+    def _process_scheduled_events(self):
+        """Process events scheduled for current time."""
+        current_time_str = self.current_time.strftime("%H:%M")
+        
+        for event in self.scheduled_events:
+            event_time = event.get("t", "")
+            if event_time == current_time_str or abs(
+                (datetime.strptime(f"2024-06-01 {event_time}", "%Y-%m-%d %H:%M") - self.current_time).total_seconds()
+            ) < self.step_duration.total_seconds():
+                self._handle_event(event)
+                # Mark as processed (remove from list)
+                self.scheduled_events.remove(event)
+                break
+    
+    def _handle_event(self, event: Dict):
+        """Handle a scheduled event."""
+        event_type = event.get("type")
+        
+        if event_type == "arrival_batch":
+            count = event.get("count", 0)
+            self._spawn_athletes_at_airport(count)
+        
+        elif event_type == "event_start":
+            venue = event.get("venue")
+            # Trigger athletes to move to venue
+            for athlete in self.athletes:
+                if athlete.status == "waiting" and venue in self.venues:
+                    athlete.target_location = (
+                        self.venues[venue]["lat"],
+                        self.venues[venue]["lon"]
+                    )
+                    athlete.status = "traveling"
+                    athlete._plan_route()
+        
+        elif event_type == "medical_event":
+            venue = event.get("venue")
+            severity = event.get("severity", 1)
+            self._trigger_medical_event_at_venue(venue, severity)
+        
+        elif event_type == "suspicious_person":
+            location = event.get("location")
+            self._trigger_suspicious_person(location)
+    
+    def _spawn_athletes_at_airport(self, count: int):
+        """Spawn new athletes at airport (Harry Reid International)."""
+        airport_key = "harry_reid_airport" if "harry_reid_airport" in self.venues else "las_airport"
+        if airport_key not in self.venues:
+            return
+        
+        airport = self.venues[airport_key]
+        airport_loc = (airport["lat"], airport["lon"])
+        
+        max_id = max([a.unique_id for a in self.athletes] + [0])
+        
+        for i in range(count):
+            athlete = Athlete(
+                unique_id=max_id + i + 1,
+                model=self,
+                mobility=random.choice(["walking", "walking", "wheelchair", "assisted"]),
+                medical_risk=random.uniform(0.05, 0.2),
+            )
+            athlete.current_location = airport_loc
+            athlete.status = "waiting"
+            self.athletes.append(athlete)
+            self.schedule.add(athlete)
+            self.space.place_agent(athlete, athlete.current_location)
+    
+    def _trigger_medical_event_at_venue(self, venue: str, severity: int):
+        """Trigger medical event at specific venue."""
+        if venue not in self.venues:
+            return
+        
+        venue_loc = (self.venues[venue]["lat"], self.venues[venue]["lon"])
+        nearby_athletes = self.get_agents_near(venue_loc, 0.01, agent_type=Athlete)
+        
+        if nearby_athletes:
+            athlete = random.choice(nearby_athletes)
+            athlete.medical_event = True
+            athlete.status = "emergency"
+            self.trigger_medical_event(athlete)
+    
+    def _trigger_suspicious_person(self, location: Tuple[float, float]):
+        """Trigger suspicious person incident."""
+        incident = {
+            "id": f"incident_{len(self.active_incidents)}",
+            "type": "suspicious_person",
+            "location": location,
+            "reported_by": "volunteer",
+            "timestamp": self.current_time,
+        }
+        self.active_incidents.append(incident)
+        
+        # Dispatch nearest LVMPD unit
+        self._dispatch_lvmpd(incident)
+    
+    def trigger_medical_event(self, athlete: Athlete):
+        """Handle medical event for athlete."""
+        self.medical_events.append({
+            "id": f"med_{len(self.medical_events)}",
+            "athlete_id": athlete.unique_id,
+            "location": athlete.current_location,
+            "timestamp": self.current_time,
+        })
+        self.metrics["medical_events_count"] += 1
+        
+        # Dispatch nearest AMR unit
+        self._dispatch_amr(athlete)
+        
+        # Assign volunteer if available
+        self._assign_volunteer(athlete)
+    
+    def _dispatch_amr(self, athlete: Athlete):
+        """Dispatch nearest available AMR unit."""
+        if not athlete.current_location:
+            return
+        
+        available_units = [u for u in self.amr_units if u.status == "available"]
+        if not available_units:
+            return
+        
+        # Find nearest
+        nearest = min(
+            available_units,
+            key=lambda u: self._distance(
+                u.current_location or (0.5, 0.5),
+                athlete.current_location
+            ) if u.current_location else float('inf')
+        )
+        
+        nearest.status = "dispatched"
+        nearest.current_patient = athlete
+        nearest.current_location = nearest.current_location or (0.5, 0.5)
+    
+    def _dispatch_lvmpd(self, incident: Dict):
+        """Dispatch nearest LVMPD unit to incident."""
+        incident_loc = incident.get("location")
+        if not incident_loc:
+            return
+        
+        available_units = [u for u in self.lvmpd_units if u.status == "available"]
+        if not available_units:
+            return
+        
+        nearest = min(
+            available_units,
+            key=lambda u: self._distance(
+                u.current_location or (0.5, 0.5),
+                incident_loc
+            ) if u.current_location else float('inf')
+        )
+        
+        nearest.status = "dispatched"
+        nearest.current_incident = incident
+        nearest.dispatch_start_time = self.current_time
+    
+    def _assign_volunteer(self, athlete: Athlete):
+        """Assign volunteer to assist athlete."""
+        available = [v for v in self.volunteers if v.status == "patrolling"]
+        if not available:
+            return
+        
+        nearest = min(
+            available,
+            key=lambda v: self._distance(
+                v.current_location or (0.5, 0.5),
+                athlete.current_location
+            ) if v.current_location else float('inf')
+        )
+        
+        nearest.status = "responding"
+        nearest.current_assignment = {
+            "athlete": athlete,
+            "location": athlete.current_location,
+        }
+    
+    def get_nearest_hospital(self, location: Tuple[float, float]) -> Tuple[float, float]:
+        """Get nearest hospital to location."""
+        return min(
+            self.hospitals,
+            key=lambda h: self._distance(location, h)
+        )
+    
+    def get_agents_near(self, location: Tuple[float, float], radius: float, agent_type=None) -> List:
+        """Get agents near a location."""
+        nearby = []
+        for agent in self.schedule.agents:
+            if agent_type and not isinstance(agent, agent_type):
+                continue
+            if hasattr(agent, 'current_location') and agent.current_location:
+                dist = self._distance(location, agent.current_location)
+                if dist <= radius:
+                    nearby.append(agent)
+        return nearby
+    
+    def get_active_alert(self, hotel_id: str) -> Optional[Dict]:
+        """Get active alert for hotel."""
+        alerts = self.active_alerts.get(hotel_id, [])
+        return alerts[0] if alerts else None
+    
+    def resolve_alert(self, hotel_id: str, alert_id: str):
+        """Resolve alert."""
+        alerts = self.active_alerts.get(hotel_id, [])
+        self.active_alerts[hotel_id] = [a for a in alerts if a.get("id") != alert_id]
+    
+    def resolve_incident(self, incident_id: str):
+        """Resolve incident."""
+        self.active_incidents = [i for i in self.active_incidents if i.get("id") != incident_id]
+        self.metrics["incidents_resolved"] += 1
+    
+    def complete_medical_transport(self, athlete_id: int):
+        """Complete medical transport."""
+        self.completed_transports.append({
+            "athlete_id": athlete_id,
+            "timestamp": self.current_time,
+        })
+    
+    def validate_access_token(self, token: str, location: str) -> bool:
+        """Validate access token (simulated)."""
+        if not self.access_control.get("athlete_badge_required", False):
+            return True
+        
+        # Check if token is valid athlete badge
+        if token.startswith("ATH_"):
+            return True
+        
+        # Invalid token - trigger alert
+        hotel_id = location.split("_")[0] if "_" in location else "unknown"
+        hotel_venue = self.venues.get(f"{hotel_id}_hotel", {})
+        alert = {
+            "id": f"alert_{len(self.active_alerts.get(hotel_id, []))}",
+            "type": "access_denied",
+            "location": (hotel_venue.get("lat", 36.1), hotel_venue.get("lon", -115.15)),
+            "timestamp": self.current_time,
+        }
+        if hotel_id not in self.active_alerts:
+            self.active_alerts[hotel_id] = []
+        self.active_alerts[hotel_id].append(alert)
+        
+        # Dispatch security
+        for security in self.hotel_security:
+            if security.hotel_id == hotel_id and security.status == "patrolling":
+                security.status = "responding"
+                break
+        
+        return False
+    
+    def _update_metrics(self):
+        """Update computed metrics."""
+        # Safety score (simplified)
+        base_score = 100.0
+        
+        # Penalties
+        if self.active_incidents:
+            base_score -= len(self.active_incidents) * 5
+        
+        if self.medical_events:
+            base_score -= len([e for e in self.medical_events if e not in self.completed_transports]) * 3
+        
+        # Response time (average)
+        if self.completed_transports:
+            # Simplified: assume 5 min average
+            self.metrics["avg_response_time"] = 300.0
+        else:
+            self.metrics["avg_response_time"] = 0.0
+        
+        self.metrics["safety_score"] = max(0.0, base_score)
+        
+        # Containment rate
+        total_incidents = len(self.active_incidents) + len(self.medical_events)
+        resolved = self.metrics["incidents_resolved"] + len(self.completed_transports)
+        if total_incidents > 0:
+            self.metrics["containment_rate"] = resolved / total_incidents
+        else:
+            self.metrics["containment_rate"] = 1.0
+    
+    def _distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+        """Calculate distance between two points."""
+        return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)**0.5
+    
+    def get_state(self) -> Dict:
+        """Get current simulation state for API."""
+        return {
+            "time": self.current_time.isoformat(),
+            "agents": {
+                "athletes": [
+                    {
+                        "id": a.unique_id,
+                        "type": "athlete",
+                        "location": a.current_location,
+                        "status": a.status,
+                        "medical_event": a.medical_event,
+                    }
+                    for a in self.athletes if a.current_location
+                ],
+                "volunteers": [
+                    {
+                        "id": v.unique_id,
+                        "type": "volunteer",
+                        "location": v.current_location,
+                        "status": v.status,
+                    }
+                    for v in self.volunteers if v.current_location
+                ],
+                "security": [
+                    {
+                        "id": s.unique_id,
+                        "type": "hotel_security",
+                        "location": s.current_location,
+                        "status": s.status,
+                        "hotel_id": s.hotel_id,
+                    }
+                    for s in self.hotel_security if s.current_location
+                ],
+                "lvmpd": [
+                    {
+                        "id": u.unique_id,
+                        "type": "lvmpd",
+                        "location": u.current_location,
+                        "status": u.status,
+                    }
+                    for u in self.lvmpd_units if u.current_location
+                ],
+                "amr": [
+                    {
+                        "id": u.unique_id,
+                        "type": "amr",
+                        "location": u.current_location,
+                        "status": u.status,
+                    }
+                    for u in self.amr_units if u.current_location
+                ],
+                "buses": [
+                    {
+                        "id": b.unique_id,
+                        "type": "bus",
+                        "location": b.current_location,
+                        "status": b.status,
+                    }
+                    for b in self.buses if b.current_location
+                ],
+            },
+            "incidents": self.active_incidents,
+            "metrics": self.metrics,
+        }
+

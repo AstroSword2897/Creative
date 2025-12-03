@@ -1,0 +1,388 @@
+/**
+ * Las Vegas AthleteCare - Premium Visual Design System
+ * High-end, luxurious, instantly-readable aesthetic
+ */
+
+:root {
+  /* Primary Palette - Soft Vegas Glow */
+  --color-electric-blue: #0077FF;
+  --color-neon-teal: #00F5D4;
+  --color-vegas-gold: #F4C430;
+  --color-warm-coral: #FF6F61;
+  --color-desert-sand: #F7E7CE;
+
+  /* Status Colors */
+  --color-safe-green: #2ECC71;
+  --color-caution-yellow: #F1C40F;
+  --color-alert-red: #E74C3C;
+
+  /* Neutral Palette */
+  --color-jet-black: #0A0A0A;
+  --color-charcoal: #121417;
+  --color-slate-gray: #2D2F33;
+  --color-soft-white: #FAFAFA;
+  --color-desert-sand-bg: #F7E7CE;
+
+  /* Background Gradients */
+  --gradient-day: linear-gradient(180deg, #F7F9FC 0%, #F7E7CE 100%);
+  --gradient-night: radial-gradient(circle at 10% 10%, #0A0F2B 0%, #111428 30%, #2B1536 100%);
+
+  /* Typography */
+  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-accent: 'Montserrat', sans-serif;
+
+  /* Typography Scale */
+  --text-hero: 44px / 56px var(--font-accent);
+  --text-h1: 44px / 56px var(--font-accent);
+  --text-h2: 28px / 36px var(--font-accent);
+  --text-h3: 20px / 28px var(--font-primary);
+  --text-body: 16px / 24px var(--font-primary);
+  --text-small: 13px / 18px var(--font-primary);
+  --text-kpi: 48px / 1 var(--font-accent);
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(5, 10, 20, 0.1);
+  --shadow-md: 0 4px 16px rgba(5, 10, 20, 0.2);
+  --shadow-lg: 0 8px 24px rgba(5, 10, 20, 0.4);
+  --shadow-glow-blue: 0 0 20px rgba(0, 119, 255, 0.4);
+  --shadow-glow-teal: 0 0 20px rgba(0, 245, 212, 0.4);
+  --shadow-glow-gold: 0 0 20px rgba(244, 196, 48, 0.4);
+
+  /* Transitions */
+  --transition-fast: 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Blur */
+  --blur-sm: 8px;
+  --blur-md: 12px;
+  --blur-lg: 18px;
+
+  /* Layout */
+  --sidebar-width: 340px;
+  --kpi-panel-width: 320px;
+  --timeline-height: 110px;
+}
+
+/* Typography Classes */
+.text-hero {
+  font: var(--text-hero);
+  font-weight: 600;
+  color: var(--color-soft-white);
+}
+
+.text-h1 {
+  font: var(--text-h1);
+  font-weight: 600;
+  color: var(--color-soft-white);
+}
+
+.text-h2 {
+  font: var(--text-h2);
+  font-weight: 600;
+  color: var(--color-soft-white);
+}
+
+.text-h3 {
+  font: var(--text-h3);
+  font-weight: 500;
+  color: var(--color-soft-white);
+}
+
+.text-body {
+  font: var(--text-body);
+  color: var(--color-soft-white);
+}
+
+.text-small {
+  font: var(--text-small);
+  color: var(--color-soft-white);
+  opacity: 0.8;
+}
+
+.text-kpi {
+  font: var(--text-kpi);
+  font-weight: 700;
+  color: var(--color-soft-white);
+}
+
+/* Premium UI Components */
+.panel-glass {
+  background: rgba(18, 20, 23, 0.72);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-lg);
+}
+
+.panel-elevated {
+  background: var(--color-slate-gray);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--color-electric-blue);
+  color: var(--color-soft-white);
+  font: 14px / 1 var(--font-accent);
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.btn-primary:hover {
+  transform: scale(1.03);
+  box-shadow: var(--shadow-glow-blue), var(--shadow-lg);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-soft-white);
+  font: 14px / 1 var(--font-accent);
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-slate-gray);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-neon-teal);
+  color: var(--color-neon-teal);
+  transform: translateY(-2px);
+}
+
+/* Cards */
+.card-kpi {
+  background: rgba(18, 20, 23, 0.72);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.card-incident {
+  background: rgba(231, 76, 60, 0.1);
+  border-left: 3px solid var(--color-alert-red);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Glow Effects */
+.glow-blue {
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.glow-teal {
+  box-shadow: var(--shadow-glow-teal);
+}
+
+.glow-gold {
+  box-shadow: var(--shadow-glow-gold);
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes route-draw {
+  from {
+    stroke-dashoffset: 100%;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-slide-in {
+  animation: slide-in-right var(--transition-base) ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in var(--transition-base) ease-out;
+}
+
+/* Agent Colors */
+.agent-athlete {
+  color: var(--color-vegas-gold);
+  filter: drop-shadow(0 0 8px rgba(244, 196, 48, 0.6));
+}
+
+.agent-volunteer {
+  color: var(--color-safe-green);
+}
+
+.agent-security {
+  color: var(--color-neon-teal);
+  filter: drop-shadow(0 0 6px rgba(0, 245, 212, 0.4));
+}
+
+.agent-lvmpd {
+  color: var(--color-electric-blue);
+  filter: drop-shadow(0 0 6px rgba(0, 119, 255, 0.4));
+}
+
+.agent-amr {
+  color: var(--color-alert-red);
+  filter: drop-shadow(0 0 6px rgba(231, 76, 60, 0.4));
+}
+
+.agent-bus {
+  color: #6366F1;
+}
+
+/* Safe Zone Indicators */
+.zone-safe {
+  background: rgba(46, 204, 113, 0.15);
+  border: 2px solid var(--color-safe-green);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 20px rgba(46, 204, 113, 0.3);
+}
+
+.zone-caution {
+  background: rgba(241, 196, 15, 0.15);
+  border: 2px solid var(--color-caution-yellow);
+  border-radius: var(--radius-full);
+}
+
+.zone-restricted {
+  background: rgba(231, 76, 60, 0.15);
+  border: 2px solid var(--color-alert-red);
+  border-radius: var(--radius-full);
+}
+
+/* Timeline Scrubber */
+.timeline-track {
+  height: 4px;
+  background: var(--color-slate-gray);
+  border-radius: var(--radius-full);
+  position: relative;
+}
+
+.timeline-handle {
+  width: 20px;
+  height: 20px;
+  background: var(--color-electric-blue);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-glow-blue), var(--shadow-md);
+  cursor: grab;
+  transition: all var(--transition-fast);
+}
+
+.timeline-handle:hover {
+  transform: scale(1.2);
+}
+
+.timeline-marker {
+  position: absolute;
+  width: 2px;
+  height: 12px;
+  background: var(--color-neon-teal);
+  top: -4px;
+}
+
+/* Loading States */
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 280px;
+    --kpi-panel-width: 280px;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  :root {
+    --color-soft-white: #FFFFFF;
+    --color-charcoal: #000000;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

@@ -1,0 +1,40 @@
+{
+  "id": "vip_delegation",
+  "name": "VIP Delegation + Media Pressure",
+  "description": "VIP delegation and media presence test privacy constraints and restricted zones",
+  "seed": 505,
+  "start_time": "2024-06-01 08:00:00",
+  "duration_hours": 6,
+  "step_duration_seconds": 10,
+  "agents": {
+    "athletes": 80,
+    "volunteers": 40,
+    "hotel_rovers": 8,
+    "lvmpd_units": 5,
+    "amr_units": 2,
+    "buses": 6
+  },
+  "venues": {
+    "las_airport": {"lat": 36.084, "lon": -115.153, "name": "McCarran International Airport"},
+    "mgm_grand": {"lat": 36.1027, "lon": -115.171, "name": "MGM Grand Hotel"},
+    "unlv_cox": {"lat": 36.102, "lon": -115.150, "name": "UNLV Cox Pavilion"}
+  },
+  "weather": {
+    "temp_C": 28,
+    "heat_alert": false
+  },
+  "events": [
+    {"t": "08:00", "type": "arrival_batch", "count": 40},
+    {"t": "09:00", "type": "arrival_batch", "count": 40},
+    {"t": "10:00", "type": "vip_arrival", "count": 5},
+    {"t": "12:45", "type": "event_start", "venue": "unlv_cox"},
+    {"t": "13:00", "type": "media_arrival", "count": 15}
+  ],
+  "access_control": {
+    "athlete_badge_required": true,
+    "hotel_floor_restricted": true,
+    "media_restricted_zones": true,
+    "vip_protection": true
+  }
+}
+
