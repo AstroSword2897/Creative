@@ -3,6 +3,8 @@ interface ControlPanelProps {
   selectedScenario: string | null
   onStartSimulation: (scenarioId: string) => void
   isRunning: boolean
+  isLoading?: boolean
+  error?: string | null
 }
 
 export default function ControlPanel({
@@ -10,6 +12,8 @@ export default function ControlPanel({
   selectedScenario,
   onStartSimulation,
   isRunning,
+  isLoading = false,
+  error = null,
 }: ControlPanelProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)' }}>
@@ -21,7 +25,10 @@ export default function ControlPanel({
         {scenarios.map(scenario => (
           <button
             key={scenario.id}
-            onClick={() => onStartSimulation(scenario.id)}
+            onClick={() => {
+              console.log('🔘 Scenario button clicked:', scenario.id)
+              onStartSimulation(scenario.id)
+            }}
             disabled={isRunning}
             className={`panel-elevated text-left animate-fade-in`}
             style={{
@@ -61,7 +68,41 @@ export default function ControlPanel({
         ))}
       </div>
 
-      {isRunning && (
+      {error && (
+        <div 
+          className="panel-elevated animate-slide-in"
+          style={{
+            padding: 'var(--spacing-md)',
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(231, 76, 60, 0.15)',
+            border: '1px solid var(--color-alert-red)',
+            marginTop: 'var(--spacing-md)',
+          }}
+        >
+          <div className="text-body" style={{ color: 'var(--color-alert-red)', fontWeight: 600 }}>
+            Error: {error}
+          </div>
+        </div>
+      )}
+
+      {isLoading && (
+        <div 
+          className="panel-elevated animate-slide-in"
+          style={{
+            padding: 'var(--spacing-md)',
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(255, 212, 48, 0.15)',
+            border: '1px solid var(--color-vegas-gold)',
+            marginTop: 'var(--spacing-md)',
+          }}
+        >
+          <div className="text-body" style={{ color: 'var(--color-vegas-gold)', fontWeight: 600 }}>
+            ⏳ Starting simulation...
+          </div>
+        </div>
+      )}
+
+      {isRunning && !isLoading && (
         <div 
           className="panel-elevated animate-slide-in"
           style={{
@@ -73,7 +114,7 @@ export default function ControlPanel({
           }}
         >
           <div className="text-body" style={{ color: 'var(--color-safe-green)', fontWeight: 600 }}>
-            Simulation Running
+            ✅ Simulation Running
           </div>
           <div className="text-small" style={{ color: 'var(--color-safe-green)', marginTop: 'var(--spacing-xs)', opacity: 0.8 }}>
             Real-time updates active

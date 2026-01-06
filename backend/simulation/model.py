@@ -7,13 +7,35 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 import random
 from mesa import Model
-from mesa.time import RandomActivation
 from mesa.space import ContinuousSpace
 
+# Mesa 3.x compatibility - create simple scheduler
+class RandomActivation:
+    """Simple random activation scheduler for Mesa 3.x compatibility."""
+    def __init__(self, model):
+        self.model = model
+        self.agents = []
+    
+    def add(self, agent):
+        """Add agent to scheduler."""
+        self.agents.append(agent)
+    
+    def step(self):
+        """Step all agents in random order."""
+        import random
+        random.shuffle(self.agents)
+        for agent in self.agents:
+            if hasattr(agent, 'step'):
+                agent.step()
+
 from .agents import (
-    Athlete, Volunteer, HotelSecurity, LVMPDUnit, AMRUnit, Bus
+    Athlete, Volunteer, HotelSecurity, LVMPDUnit, AMRUnit, Bus, SecurityCommandCenter
 )
 from .route_planner import RoutePlanner
+from .scheduling import DynamicScheduler
+from .alert_prioritization import GlobalAlertManager
+from .analytics import AnalyticsEngine
+from .graph_routing import RoutingGraph
 
 
 class SpecialOlympicsModel(Model):
@@ -43,7 +65,11 @@ class SpecialOlympicsModel(Model):
         self.venues = scenario_config.get("venues", {})
         
         # Space (continuous 2D space for Las Vegas area)
-        # Bounding box: roughly Las Vegas area
+        # Normalize coordinates: Las Vegas area is roughly 36.0-36.2 lat, -115.3 to -115.1 lon
+        # Map to 0-1 space for simulation
+        self.lat_min, self.lat_max = 36.0, 36.2
+        self.lon_min, self.lon_max = -115.3, -115.1
+        
         self.space = ContinuousSpace(
             x_max=1.0, y_max=1.0, torus=False
         )
@@ -51,8 +77,14 @@ class SpecialOlympicsModel(Model):
         # Scheduler
         self.schedule = RandomActivation(self)
         
-        # Route planner
+        # Route planner (legacy - kept for compatibility)
         self.route_planner = RoutePlanner(self.venues)
+        
+        # Enhanced systems
+        self.graph_router = RoutingGraph(self.venues)
+        self.scheduler = DynamicScheduler(self)
+        self.alert_manager = GlobalAlertManager(self)
+        self.analytics = AnalyticsEngine(self, grid_size=20)
         
         # Agent tracking
         self.athletes = []
@@ -61,6 +93,70 @@ class SpecialOlympicsModel(Model):
         self.lvmpd_units = []
         self.amr_units = []
         self.buses = []
+        self.command_center = None
+        
+        # Events and incidents
+        self.scheduled_events = scenario_config.get("events", [])
+        self.active_incidents = []
+        self.active_alerts = {}  # hotel_id -> list of alerts
+        self.medical_events = []
+        self.completed_transports = []
+        
+        # Metrics
+        self.metrics = {
+            "safety_score": 100.0,
+            "avg_response_time": 0.0,
+            "containment_rate": 1.0,
+            "athlete_delay_minutes": 0.0,
+            "accessibility_coverage": 1.0,
+            "medical_events_count": 0,
+            "incidents_resolved": 0,
+        }
+        
+        # Access control
+        self.access_control = scenario_config.get("access_control", {})
+        
+        # Initialize agents
+        self._initialize_agents(scenario_config.get("agents", {}))
+        
+        # Initialize scheduled events
+        self._initialize_events()
+        
+        # Hospital locations (hardcoded for now)
+        self.hospitals = [
+            (36.1447, -115.1481),  # UMC
+            (36.1694, -115.1231),  # Sunrise Hospital
+        ]
+    
+    def _normalize_coords(self, lat: float, lon: float) -> Tuple[float, float]:
+        """Normalize lat/lon coordinates to 0-1 space."""
+        x = (lon - self.lon_min) / (self.lon_max - self.lon_min)
+        y = (lat - self.lat_min) / (self.lat_max - self.lat_min)
+        return (x, y)
+    
+    def _denormalize_coords(self, x: float, y: float) -> Tuple[float, float]:
+        """Convert 0-1 coordinates back to lat/lon."""
+        lat = y * (self.lat_max - self.lat_min) + self.lat_min
+        lon = x * (self.lon_max - self.lon_min) + self.lon_min
+        return (lat, lon)
+        
+        # Route planner (legacy - kept for compatibility)
+        self.route_planner = RoutePlanner(self.venues)
+        
+        # Enhanced systems
+        self.graph_router = RoutingGraph(self.venues)
+        self.scheduler = DynamicScheduler(self)
+        self.alert_manager = GlobalAlertManager(self)
+        self.analytics = AnalyticsEngine(self, grid_size=20)
+        
+        # Agent tracking
+        self.athletes = []
+        self.volunteers = []
+        self.hotel_security = []
+        self.lvmpd_units = []
+        self.amr_units = []
+        self.buses = []
+        self.command_center = None
         
         # Events and incidents
         self.scheduled_events = scenario_config.get("events", [])
@@ -115,9 +211,11 @@ class SpecialOlympicsModel(Model):
             elif "las_airport" in self.venues:  # Legacy support
                 airport = self.venues["las_airport"]
                 athlete.current_location = (airport["lat"], airport["lon"])
+            # Normalize coordinates for space
+            athlete.pos = self._normalize_coords(athlete.current_location[0], athlete.current_location[1])
             self.athletes.append(athlete)
             self.schedule.add(athlete)
-            self.space.place_agent(athlete, athlete.current_location)
+            self.space.place_agent(athlete, athlete.pos)
             agent_id += 1
         
         # Volunteers
@@ -128,14 +226,15 @@ class SpecialOlympicsModel(Model):
                 model=self,
                 assignment=random.choice(["general", "venue", "transport"]),
             )
-            # Random initial location
-            volunteer.current_location = (
+            # Random initial location (normalized)
+            volunteer.pos = (
                 random.uniform(0.3, 0.7),
                 random.uniform(0.3, 0.7)
             )
+            volunteer.current_location = self._denormalize_coords(volunteer.pos[0], volunteer.pos[1])
             self.volunteers.append(volunteer)
             self.schedule.add(volunteer)
-            self.space.place_agent(volunteer, volunteer.current_location)
+            self.space.place_agent(volunteer, volunteer.pos)
             agent_id += 1
         
         # Hotel Security
@@ -152,11 +251,13 @@ class SpecialOlympicsModel(Model):
             if hotel_key in self.venues:
                 hotel = self.venues[hotel_key]
                 security.current_location = (hotel["lat"], hotel["lon"])
+                security.pos = self._normalize_coords(hotel["lat"], hotel["lon"])
             else:
-                security.current_location = (random.uniform(0.4, 0.6), random.uniform(0.4, 0.6))
+                security.pos = (random.uniform(0.4, 0.6), random.uniform(0.4, 0.6))
+                security.current_location = self._denormalize_coords(security.pos[0], security.pos[1])
             self.hotel_security.append(security)
             self.schedule.add(security)
-            self.space.place_agent(security, security.current_location)
+            self.space.place_agent(security, security.pos)
             agent_id += 1
         
         # LVMPD Units
@@ -166,11 +267,12 @@ class SpecialOlympicsModel(Model):
                 unique_id=agent_id,
                 model=self,
             )
-            # Start at central location
-            unit.current_location = (0.5, 0.5)
+            # Start at central location (normalized)
+            unit.pos = (0.5, 0.5)
+            unit.current_location = self._denormalize_coords(0.5, 0.5)
             self.lvmpd_units.append(unit)
             self.schedule.add(unit)
-            self.space.place_agent(unit, unit.current_location)
+            self.space.place_agent(unit, unit.pos)
             agent_id += 1
         
         # AMR Units
@@ -180,11 +282,12 @@ class SpecialOlympicsModel(Model):
                 unique_id=agent_id,
                 model=self,
             )
-            # Start at central location
-            unit.current_location = (0.5, 0.5)
+            # Start at central location (normalized)
+            unit.pos = (0.5, 0.5)
+            unit.current_location = self._denormalize_coords(0.5, 0.5)
             self.amr_units.append(unit)
             self.schedule.add(unit)
-            self.space.place_agent(unit, unit.current_location)
+            self.space.place_agent(unit, unit.pos)
             agent_id += 1
         
         # Buses
@@ -207,11 +310,24 @@ class SpecialOlympicsModel(Model):
             )
             if route:
                 bus.current_location = route[0]
+                bus.pos = self._normalize_coords(route[0][0], route[0][1])
             self.buses.append(bus)
             self.schedule.add(bus)
             if bus.current_location:
-                self.space.place_agent(bus, bus.current_location)
+                self.space.place_agent(bus, bus.pos)
             agent_id += 1
+        
+        # Initialize Security Command Center
+        command_center = SecurityCommandCenter(
+            unique_id=agent_id,
+            model=self,
+            location=(0.5, 0.5),  # Central location (normalized)
+        )
+        self.command_center = command_center
+        command_center.pos = (0.5, 0.5)  # Already normalized
+        command_center.current_location = self._denormalize_coords(0.5, 0.5)
+        self.schedule.add(command_center)
+        self.space.place_agent(command_center, command_center.pos)
     
     def _initialize_events(self):
         """Initialize scheduled events."""
@@ -228,6 +344,10 @@ class SpecialOlympicsModel(Model):
         
         # Step all agents
         self.schedule.step()
+        
+        # Update enhanced systems
+        self.alert_manager.update_all_alerts()
+        self.analytics.record_step()
         
         # Update metrics
         self._update_metrics()
@@ -299,10 +419,11 @@ class SpecialOlympicsModel(Model):
                 medical_risk=random.uniform(0.05, 0.2),
             )
             athlete.current_location = airport_loc
+            athlete.pos = self._normalize_coords(airport_loc[0], airport_loc[1])
             athlete.status = "waiting"
             self.athletes.append(athlete)
             self.schedule.add(athlete)
-            self.space.place_agent(athlete, athlete.current_location)
+            self.space.place_agent(athlete, athlete.pos)
     
     def _trigger_medical_event_at_venue(self, venue: str, severity: int):
         """Trigger medical event at specific venue."""
@@ -484,7 +605,7 @@ class SpecialOlympicsModel(Model):
         return False
     
     def _update_metrics(self):
-        """Update computed metrics."""
+        """Update computed metrics with enhanced security metrics."""
         # Safety score (simplified)
         base_score = 100.0
         
@@ -495,9 +616,20 @@ class SpecialOlympicsModel(Model):
         if self.medical_events:
             base_score -= len([e for e in self.medical_events if e not in self.completed_transports]) * 3
         
-        # Response time (average)
-        if self.completed_transports:
-            # Simplified: assume 5 min average
+        # Enhanced response time calculation from security units
+        all_response_times = []
+        for lvmpd in self.lvmpd_units:
+            if hasattr(lvmpd, 'response_times') and lvmpd.response_times:
+                all_response_times.extend([r["time"] for r in lvmpd.response_times])
+        
+        for security in self.hotel_security:
+            if hasattr(security, 'response_times') and security.response_times:
+                all_response_times.extend(security.response_times)
+        
+        if all_response_times:
+            self.metrics["avg_response_time"] = sum(all_response_times) / len(all_response_times)
+        elif self.completed_transports:
+            # Fallback: assume 5 min average
             self.metrics["avg_response_time"] = 300.0
         else:
             self.metrics["avg_response_time"] = 0.0
@@ -511,6 +643,23 @@ class SpecialOlympicsModel(Model):
             self.metrics["containment_rate"] = resolved / total_incidents
         else:
             self.metrics["containment_rate"] = 1.0
+        
+        # Security-specific metrics
+        if self.command_center:
+            cmd_metrics = self.command_center.get_command_center_metrics()
+            self.metrics["security_hotspots"] = cmd_metrics.get("hotspots_identified", 0)
+            self.metrics["active_threats"] = cmd_metrics.get("active_threats", 0)
+        
+        # Security coverage metrics
+        security_coverage = 0.0
+        if self.hotel_security:
+            avg_threat_level = sum(
+                s.threat_level for s in self.hotel_security
+                if hasattr(s, 'threat_level')
+            ) / len(self.hotel_security)
+            security_coverage = 1.0 - avg_threat_level  # Higher coverage = lower threat
+        
+        self.metrics["security_coverage"] = max(0.0, min(1.0, security_coverage))
     
     def _distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """Calculate distance between two points."""
@@ -580,5 +729,23 @@ class SpecialOlympicsModel(Model):
             },
             "incidents": self.active_incidents,
             "metrics": self.metrics,
+            "command_center": (
+                {
+                    "location": self.command_center.current_location,
+                    "threat_map": list(self.command_center.threat_map.items()),
+                    "hotspots": self.command_center.hotspots,
+                }
+                if self.command_center else None
+            ),
+            "security_metrics": {
+                "hotel_security": [
+                    s.get_security_metrics() if hasattr(s, 'get_security_metrics') else {}
+                    for s in self.hotel_security
+                ],
+                "lvmpd": [
+                    u.get_lvmpd_metrics() if hasattr(u, 'get_lvmpd_metrics') else {}
+                    for u in self.lvmpd_units
+                ],
+            },
         }
 

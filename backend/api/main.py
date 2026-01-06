@@ -173,11 +173,21 @@ async def step_run(run_id: str):
 @app.websocket("/ws/runs/{run_id}")
 async def websocket_stream(websocket: WebSocket, run_id: str):
     """WebSocket stream for real-time simulation updates."""
-    await websocket.accept()
+    try:
+        await websocket.accept()
+        print(f"WebSocket connection accepted for run_id: {run_id}")
+    except Exception as e:
+        print(f"Error accepting WebSocket connection: {e}")
+        return
     
     if run_id not in active_runs:
-        await websocket.send_json({"error": f"Run {run_id} not found"})
-        await websocket.close()
+        error_msg = {"error": f"Run {run_id} not found", "available_runs": list(active_runs.keys())}
+        print(f"Run {run_id} not found in active_runs. Available: {list(active_runs.keys())}")
+        try:
+            await websocket.send_json(error_msg)
+            await websocket.close()
+        except:
+            pass
         return
     
     run = active_runs[run_id]
@@ -185,6 +195,7 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
     
     try:
         # Send initial state
+        print(f"Sending initial state for run {run_id}")
         await websocket.send_json({
             "type": "state",
             "data": model.get_state(),
@@ -213,10 +224,11 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
             await asyncio.sleep(0.1)  # 100ms = 10x real-time if step is 1 second
     
     except WebSocketDisconnect:
-        pass
+        print(f"WebSocket disconnected for run {run_id}")
+    except Exception as e:
+        print(f"Error in WebSocket stream for run {run_id}: {e}")
     finally:
-        # Cleanup if needed
-        pass
+        print(f"WebSocket connection closed for run {run_id}")
 
 
 if __name__ == "__main__":

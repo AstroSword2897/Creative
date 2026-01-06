@@ -15,7 +15,7 @@ export default function MapView({ state }: MapViewProps) {
     if (!mapContainer.current || map.current) return
 
     // Initialize map
-    mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXV4NTIyMmY2Zm5lOXhmNTY3ZmEifQ.rJcFIG214AriISLbB6B5aw'
+    mapboxgl.accessToken = (import.meta as any).env?.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXV4NTIyMmY2Zm5lOXhmNTY3ZmEifQ.rJcFIG214AriISLbB6B5aw'
     
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
