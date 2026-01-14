@@ -234,9 +234,14 @@ function App() {
                 buses: message.data.agents.buses?.length || 0,
               } : {}
               
+              const totalAgents = Object.values(agentCounts).reduce((sum, count) => sum + count, 0)
+              
               console.log('✅ Setting simulation state:', {
                 type: message.type,
                 agents: Object.keys(message.data.agents || {}),
+                totalAgents,
+                agentCounts,
+                hasTime: !!message.data.time,
                 agentCounts,
                 totalAgents: Object.values(agentCounts).reduce((a: number, b: number) => a + b, 0),
                 time: message.data.time,

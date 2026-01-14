@@ -628,7 +628,7 @@ export default function View3D({ state }: View3DProps) {
       ...(state.agents?.lvmpd || []),
       ...(state.agents?.amr || []),
       ...(state.agents?.buses || []),
-    ]
+    ].filter(agent => agent && agent.location) // ✅ Filter out agents without locations
     
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 View3D: State check', {
@@ -636,8 +636,15 @@ export default function View3D({ state }: View3DProps) {
         hasAgents: !!state?.agents,
         agentKeys: state?.agents ? Object.keys(state.agents) : [],
         allAgentsLength: allAgents.length,
+        athletes: state?.agents?.athletes?.length || 0,
+        volunteers: state?.agents?.volunteers?.length || 0,
+        security: state?.agents?.security?.length || 0,
+        lvmpd: state?.agents?.lvmpd?.length || 0,
+        amr: state?.agents?.amr?.length || 0,
+        buses: state?.agents?.buses?.length || 0,
         sceneChildren: scene.children.length,
         agentsRefSize: agentsRef.current.size,
+        time: state.time,
       })
     }
 
