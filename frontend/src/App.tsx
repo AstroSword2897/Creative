@@ -353,7 +353,7 @@ function App() {
       </div>
 
       {/* Center 3D Visualization */}
-      <div className="flex-1 relative" style={{ minHeight: 0, minWidth: 0 }}>
+      <div className="flex-1 relative" style={{ minHeight: 0, minWidth: 0, height: '100vh' }}>
         <View3D state={simulationState} />
         {connectionLost && simulationState && (
           <div className="absolute top-20 left-4 z-20 text-white text-xs bg-orange-500/80 px-3 py-2 rounded backdrop-blur-sm border border-orange-400">

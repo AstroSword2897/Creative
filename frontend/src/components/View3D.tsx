@@ -130,20 +130,30 @@ export default function View3D({ state }: View3DProps) {
   // Lifts agents above ground and scales for visibility
   const createAgentMesh = (agent: any, x: number, z: number): THREE.Mesh => {
     let geometry: THREE.BufferGeometry
-    let material: THREE.Material
+    let baseMaterial: THREE.Material
 
     if (agent.type === 'athlete') {
       geometry = geometryCache.athlete
-      material = materialCache.athlete
+      baseMaterial = materialCache.athlete
     } else if (agent.type === 'bus') {
       geometry = geometryCache.bus
-      material = materialCache.bus
+      baseMaterial = materialCache.bus
     } else if (agent.type === 'lvmpd' || agent.type === 'amr') {
       geometry = geometryCache.responder
-      material = materialCache[agent.type] || materialCache.default
+      baseMaterial = materialCache[agent.type] || materialCache.default
     } else {
       geometry = geometryCache.default
-      material = materialCache[agent.type] || materialCache.default
+      baseMaterial = materialCache[agent.type] || materialCache.default
+    }
+
+    // ✅ Clone material to avoid mutating shared cache
+    const material = baseMaterial.clone()
+    
+    // Make materials brighter and more visible (safe - we're modifying cloned material)
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.emissiveIntensity = 0.8 // Very bright emissive
+      material.roughness = 0.2 // More reflective
+      material.metalness = 0.1
     }
 
     const mesh = new THREE.Mesh(geometry, material)
@@ -154,13 +164,6 @@ export default function View3D({ state }: View3DProps) {
     
     // Scale for visibility (very large scale to ensure visibility)
     mesh.scale.set(8, 8, 8) // Increased to 8x for maximum visibility
-    
-    // Make materials brighter and more visible
-    if (mesh.material instanceof THREE.MeshStandardMaterial) {
-      mesh.material.emissiveIntensity = 0.8 // Very bright emissive
-      mesh.material.roughness = 0.2 // More reflective
-      mesh.material.metalness = 0.1
-    }
     
     mesh.castShadow = false // Disable shadows for better performance
     mesh.receiveShadow = false
@@ -863,14 +866,14 @@ export default function View3D({ state }: View3DProps) {
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-full relative"
       style={{
-        background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)',
-        minHeight: '100%',
-        minWidth: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
         width: '100%',
-        height: '100%',
-        position: 'relative',
+        height: '100%', // ✅ Uses parent's explicit height - fixes blank canvas issue
+        overflow: 'hidden',
+        background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)',
       }}
     >
       {/* Info overlay - pointer-events-none so it doesn't block canvas */}
