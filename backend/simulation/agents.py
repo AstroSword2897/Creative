@@ -942,37 +942,97 @@ class AMRUnit(Agent):
         self.destination = None
         
     def step(self):
-        """AMR unit behavior."""
+        """✅ ENHANCED: AMR unit behavior with better coordination and tracking."""
         if self.status == "dispatched":
             self._respond_to_medical()
         elif self.status == "transporting":
             self._transport_patient()
+        elif self.status == "available":
+            # ✅ ENHANCED: Check for nearby medical events that need response
+            self._check_nearby_medical_events()
         
         # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
         if self.current_location:
             self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
             self.model.space.move_agent(self, self.pos)
     
+    def _check_nearby_medical_events(self):
+        """✅ ENHANCED: Proactively check for nearby medical events."""
+        if not self.current_location or self.status != "available":
+            return
+        
+        # Check for athletes in emergency nearby
+        nearby_athletes = self.model.get_agents_near(self.current_location, 0.03, agent_type=None)
+        for athlete in nearby_athletes:
+            if hasattr(athlete, 'medical_event') and athlete.medical_event:
+                # Check if another unit is already responding
+                responding_units = [
+                    u for u in self.model.amr_units
+                    if u.status == "dispatched" and u.current_patient == athlete
+                ]
+                if not responding_units:
+                    # Self-dispatch to nearby emergency
+                    self.status = "dispatched"
+                    self.current_patient = athlete
+                    import os
+                    if os.getenv('DEBUG', '').lower() == 'true':
+                        print(f"🚑 AMR {self.unique_id} self-dispatched to nearby emergency")
+                    break
+    
     def _respond_to_medical(self):
-        """Respond to medical emergency."""
+        """✅ ENHANCED: Respond to medical emergency with better pathfinding."""
         if not self.current_patient:
+            # Patient may have been resolved or moved
+            self.status = "available"
+            self.current_patient = None
             return
         
         patient_loc = self.current_patient.current_location
         if not patient_loc:
             return
         
-        # Move to patient
+        # Move to patient using routing if available
         if self.current_location:
             distance = self._distance(self.current_location, patient_loc)
-            if distance < 0.005:  # Arrived
+            if distance < 0.005:  # Arrived at patient
                 self.status = "transporting"
                 # Determine destination (hospital)
                 self.destination = self.model.get_nearest_hospital(patient_loc)
+                # ✅ ENHANCED: Track response time
+                if hasattr(self, 'dispatch_time') and self.dispatch_time:
+                    response_time = (self.model.current_time - self.dispatch_time).total_seconds()
+                    if not hasattr(self, 'response_times'):
+                        self.response_times = []
+                    self.response_times.append({
+                        "time": response_time,
+                        "patient_id": self.current_patient.unique_id,
+                        "timestamp": self.model.current_time
+                    })
             else:
-                self.current_location = self._move_towards(
-                    self.current_location, patient_loc, 12.0
-                )
+                # ✅ ENHANCED: Use routing for faster response
+                if hasattr(self.model, 'route_planner'):
+                    # Use routing to avoid congestion
+                    path = self.model.route_planner.find_path(
+                        self.current_location,
+                        patient_loc,
+                        avoid_hotspots=True
+                    )
+                    if path and len(path) > 0:
+                        # Move towards first waypoint
+                        next_point = path[0]
+                        self.current_location = self._move_towards(
+                            self.current_location, next_point, 12.0
+                        )
+                    else:
+                        # Fallback to direct movement
+                        self.current_location = self._move_towards(
+                            self.current_location, patient_loc, 12.0
+                        )
+                else:
+                    # Direct movement
+                    self.current_location = self._move_towards(
+                        self.current_location, patient_loc, 12.0
+                    )
     
     def _transport_patient(self):
         """Transport patient to hospital."""
@@ -1032,15 +1092,38 @@ class Bus(Agent):
         self.door_access_points = []  # Locations where athletes can board
         
     def step(self):
-        """Bus behavior."""
+        """✅ ENHANCED: Bus behavior with better route following and passenger management."""
         if self.status == "in_service":
             self._follow_route()
             self._handle_boarding()
+            # ✅ ENHANCED: Check for athletes waiting at stops
+            self._check_for_waiting_athletes()
         
         # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
         if self.current_location:
             self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
             self.model.space.move_agent(self, self.pos)
+    
+    def _check_for_waiting_athletes(self):
+        """✅ ENHANCED: Check for athletes waiting at current stop and allow boarding."""
+        if not self.current_location or len(self.current_passengers) >= self.capacity:
+            return
+        
+        # Find athletes waiting at current stop
+        nearby_athletes = self.model.get_agents_near(self.current_location, 0.01, agent_type=None)
+        for athlete in nearby_athletes:
+            if (hasattr(athlete, 'status') and athlete.status == "waiting" and
+                athlete not in self.current_passengers and
+                len(self.current_passengers) < self.capacity):
+                # Board athlete
+                self.current_passengers.append(athlete)
+                athlete.status = "on_bus"
+                if hasattr(athlete, 'current_bus'):
+                    athlete.current_bus = self
+                # ✅ ENHANCED: Track boarding for metrics
+                if not hasattr(self, 'total_boardings'):
+                    self.total_boardings = 0
+                self.total_boardings += 1
     
     def _follow_route(self):
         """Follow assigned route."""

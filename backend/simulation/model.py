@@ -125,6 +125,11 @@ class SpecialOlympicsModel(Model):
             "max_venue_density": 0.0,
             "athletes_per_hour": 0.0,
             "avg_incident_age_seconds": 0.0,
+            # ✅ ENHANCED: Additional efficiency metrics
+            "resource_utilization": 0.0,
+            "medical_response_rate": 1.0,
+            "avg_travel_time_seconds": 0.0,
+            "system_efficiency": 1.0,
         }
         
         # Access control
@@ -674,6 +679,57 @@ class SpecialOlympicsModel(Model):
             self.metrics["avg_incident_age_seconds"] = avg_age
         else:
             self.metrics["avg_incident_age_seconds"] = 0.0
+        
+        # ✅ ENHANCED: Resource utilization metrics
+        total_units = len(self.lvmpd_units) + len(self.amr_units) + len(self.volunteers) + len(self.hotel_security)
+        if total_units > 0:
+            active_units = (
+                sum(1 for u in self.lvmpd_units if u.status != "available") +
+                sum(1 for u in self.amr_units if u.status != "available") +
+                sum(1 for v in self.volunteers if v.status != "patrolling") +
+                sum(1 for s in self.hotel_security if s.status != "patrolling")
+            )
+            self.metrics["resource_utilization"] = active_units / total_units
+        else:
+            self.metrics["resource_utilization"] = 0.0
+        
+        # ✅ ENHANCED: Medical response efficiency
+        if self.medical_events:
+            active_medical = len([e for e in self.medical_events if e not in self.completed_transports])
+            total_medical = len(self.medical_events)
+            self.metrics["medical_response_rate"] = (total_medical - active_medical) / total_medical if total_medical > 0 else 0.0
+        else:
+            self.metrics["medical_response_rate"] = 1.0
+        
+        # ✅ ENHANCED: Average time to venue (athlete travel efficiency)
+        athletes_traveling = [a for a in self.athletes if a.status == "traveling"]
+        if athletes_traveling:
+            # Estimate travel time based on distance and speed
+            total_travel_time = 0.0
+            for athlete in athletes_traveling:
+                if athlete.current_location and athlete.target_location:
+                    distance = self._distance(athlete.current_location, athlete.target_location)
+                    # Estimate time based on walking speed (degrees to time conversion)
+                    estimated_time = (distance / athlete.walking_speed) * 3600  # Rough estimate
+                    total_travel_time += estimated_time
+            self.metrics["avg_travel_time_seconds"] = total_travel_time / len(athletes_traveling)
+        else:
+            self.metrics["avg_travel_time_seconds"] = 0.0
+        
+        # ✅ ENHANCED: System efficiency score (combination of multiple factors)
+        efficiency_factors = {
+            "containment": self.metrics.get("containment_rate", 1.0),
+            "response_time": 1.0 - min(1.0, self.metrics.get("avg_response_time", 0.0) / 600.0),  # Normalize to 10 min max
+            "medical_response": self.metrics.get("medical_response_rate", 1.0),
+            "resource_utilization": self.metrics.get("resource_utilization", 0.5),  # Optimal is ~0.7
+        }
+        # Weighted average
+        self.metrics["system_efficiency"] = (
+            efficiency_factors["containment"] * 0.3 +
+            efficiency_factors["response_time"] * 0.3 +
+            efficiency_factors["medical_response"] * 0.2 +
+            min(1.0, efficiency_factors["resource_utilization"] / 0.7) * 0.2  # Normalize utilization
+        )
     
     def _check_dynamic_events(self):
         """✅ ENHANCED: Generate dynamic events based on crowd density and conditions."""
