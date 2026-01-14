@@ -99,15 +99,20 @@ class IntegratedSimulationSystems:
             
             try:
                 # Increase load on hotspot nodes
+                # ✅ OPTIMIZED: Scale load penalty based on hotspot density for more realistic avoidance
                 for hotspot in hotspots:
                     location = hotspot["location"]
+                    density = hotspot.get("density", 0.7)  # Default to threshold if not provided
                     node_id = self.routing._nearest_node(location)
                     if node_id:
                         node = self.routing.get_node(node_id)
                         if node:
                             original_loads[node_id] = node.current_load
-                            # Increase load significantly to discourage routing through hotspots
-                            self.routing.update_node_load(node_id, node.current_load + 200)
+                            # Scale penalty: higher density = higher penalty (configurable multiplier)
+                            # Base penalty of 200, scaled by density (0.7-1.0 range)
+                            penalty_multiplier = 1.0 + (density - 0.7) * 2.0  # 1.0 to 1.6 multiplier
+                            load_penalty = int(200 * penalty_multiplier)
+                            self.routing.update_node_load(node_id, node.current_load + load_penalty)
                 
                 # Find path
                 path = self.routing.find_path(

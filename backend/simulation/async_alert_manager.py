@@ -22,13 +22,23 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
     Thread-safe and optimized for real-time updates.
     """
     
-    def __init__(self, model, max_density: int = 30, vip_locations: List[Tuple[float, float]] = None):
+    def __init__(
+        self, 
+        model, 
+        max_density: int = 30, 
+        vip_locations: List[Tuple[float, float]] = None,
+        crowd_density_radius: float = 0.02,
+        max_lifetime_hours: Optional[int] = None  # Optional max lifetime for HIGH/CRITICAL alerts
+    ):
         super().__init__(model)
         self.max_density = max_density
         self.vip_locations = vip_locations or []
+        self.crowd_density_radius = crowd_density_radius  # ✅ Configurable radius for crowd density checks
+        self.max_lifetime_hours = max_lifetime_hours  # ✅ Optional max lifetime for persistent alerts
         self._lock = asyncio.Lock()
         self._dirty_alerts: Set[str] = set()  # Alerts that need priority recalculation
         self._alert_ttl: Dict[str, datetime] = {}  # Time-to-live for alerts
+        self._alert_created: Dict[str, datetime] = {}  # Creation time for max lifetime tracking
         self._subscribers: Set[Callable] = set()  # WebSocket subscribers
         
         # Configurable TTL by threat level (in minutes)
@@ -36,8 +46,8 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
             ThreatLevel.INFO: 30,  # Info alerts expire after 30 min
             ThreatLevel.LOW: 60,   # Low priority: 1 hour
             ThreatLevel.MEDIUM: 120,  # Medium: 2 hours
-            ThreatLevel.HIGH: None,   # High: no expiration
-            ThreatLevel.CRITICAL: None,  # Critical: no expiration
+            ThreatLevel.HIGH: None,   # High: no expiration (unless max_lifetime_hours set)
+            ThreatLevel.CRITICAL: None,  # Critical: no expiration (unless max_lifetime_hours set)
         }
     
     async def register_alert(
@@ -73,12 +83,18 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
             heapq.heappush(self.alert_queue, alert)
             self.alert_history.append(alert)
             
+            # Track creation time for max lifetime checks
+            self._alert_created[alert_id] = timestamp
+            
             # Set TTL if applicable
             ttl_minutes = self.ttl_by_threat.get(base_priority)
             if ttl_minutes:
                 self._alert_ttl[alert_id] = timestamp + timedelta(minutes=ttl_minutes)
+            elif self.max_lifetime_hours and base_priority in (ThreatLevel.HIGH, ThreatLevel.CRITICAL):
+                # Apply max lifetime to HIGH/CRITICAL alerts if configured
+                self._alert_ttl[alert_id] = timestamp + timedelta(hours=self.max_lifetime_hours)
             
-            # Notify subscribers
+            # Notify subscribers concurrently
             await self._notify_subscribers('alert_registered', alert)
             
             # Log in development mode
@@ -90,21 +106,26 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
     
     async def _update_alert_factors_async(self, alert: PrioritizedAlert):
         """Update dynamic priority factors asynchronously."""
-        # Crowd density with configurable max
+        # Crowd density with configurable radius and max
         nearby_athletes = self.model.get_agents_near(
-            alert.location, 0.02, agent_type=None
+            alert.location, self.crowd_density_radius, agent_type=None
         )
         alert.crowd_density = min(1.0, len(nearby_athletes) / self.max_density)
         
-        # VIP proximity check
+        # VIP proximity check (O(n) - consider spatial index for many VIPs)
         alert.proximity_to_vip = await self._check_vip_proximity(alert.location)
         
-        # Weather factor
+        # Weather factor - enhanced with multiple parameters
         weather = self.model.weather
-        if weather.get("heat_alert", False) or weather.get("temp_C", 20) > 35:
-            alert.weather_factor = 1.3
-        else:
-            alert.weather_factor = 1.0
+        weather_factor = 1.0
+        if weather.get("heat_alert", False):
+            weather_factor = 1.3
+        elif weather.get("temp_C", 20) > 35:
+            # Scale with temperature severity
+            temp_factor = 1.0 + (weather.get("temp_C", 20) - 35) * 0.02
+            weather_factor = min(1.5, temp_factor)
+        # Could add wind, rain, etc. here
+        alert.weather_factor = weather_factor
     
     async def _check_vip_proximity(self, location: Tuple[float, float], radius: float = 0.01) -> bool:
         """Check if location is near any VIP."""
@@ -141,20 +162,47 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
             self._dirty_alerts.add(alert_id)
     
     async def expire_alerts(self):
-        """Remove expired alerts based on TTL."""
+        """
+        Remove expired alerts based on TTL and max lifetime.
+        
+        ✅ ENHANCED: Also checks max_lifetime_hours for HIGH/CRITICAL alerts.
+        """
         async with self._lock:
             now = self.model.current_time
-            expired = [
-                alert_id for alert_id, expiry_time in self._alert_ttl.items()
-                if expiry_time and now > expiry_time
-            ]
+            expired = []
             
+            # Check TTL-based expiration
+            for alert_id, expiry_time in self._alert_ttl.items():
+                if expiry_time and now > expiry_time:
+                    expired.append(alert_id)
+            
+            # Check max lifetime expiration (for HIGH/CRITICAL alerts)
+            if self.max_lifetime_hours:
+                max_lifetime = timedelta(hours=self.max_lifetime_hours)
+                for alert_id, created_time in self._alert_created.items():
+                    if alert_id not in expired and alert_id in self.active_alerts:
+                        alert = self.active_alerts[alert_id]
+                        if alert.base_priority in (ThreatLevel.HIGH, ThreatLevel.CRITICAL):
+                            if now - created_time > max_lifetime:
+                                expired.append(alert_id)
+                                # Log warning for max lifetime expiration
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(
+                                    f"Alert {alert_id} ({alert.base_priority.value}) expired due to max lifetime "
+                                    f"({self.max_lifetime_hours}h)"
+                                )
+            
+            # Notify and remove expired alerts
             for alert_id in expired:
                 if alert_id in self.active_alerts:
                     alert = self.active_alerts[alert_id]
                     await self._notify_subscribers('alert_expired', alert)
                     del self.active_alerts[alert_id]
-                    del self._alert_ttl[alert_id]
+                    if alert_id in self._alert_ttl:
+                        del self._alert_ttl[alert_id]
+                    if alert_id in self._alert_created:
+                        del self._alert_created[alert_id]
             
             if expired:
                 # Rebuild queue
@@ -191,6 +239,8 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
                 del self.unit_assignments[alert_id]
             if alert_id in self._alert_ttl:
                 del self._alert_ttl[alert_id]
+            if alert_id in self._alert_created:
+                del self._alert_created[alert_id]
             
             # Rebuild queue
             self.alert_queue = [
@@ -214,7 +264,12 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
         return results
     
     async def _notify_subscribers(self, event_type: str, alert: PrioritizedAlert, **kwargs):
-        """Notify all WebSocket subscribers of alert events."""
+        """
+        Notify all WebSocket subscribers of alert events concurrently.
+        
+        ✅ OPTIMIZED: Uses asyncio.create_task for concurrent notifications,
+        preventing slow clients from blocking others.
+        """
         if not self._subscribers:
             return
         
@@ -225,17 +280,44 @@ class AsyncGlobalAlertManager(GlobalAlertManager):
             **kwargs
         }
         
-        # Notify all subscribers
-        disconnected = set()
-        for subscriber in self._subscribers:
+        # ✅ Concurrent notification - each subscriber gets its own task
+        async def notify_single_subscriber(subscriber: Callable):
+            """Notify a single subscriber with error handling."""
             try:
                 await subscriber(message)
             except Exception as e:
-                print(f"Error notifying subscriber: {e}")
-                disconnected.add(subscriber)
+                # ✅ Enhanced error logging with context
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Error notifying subscriber for alert {alert.alert_id} ({event_type}): {e}",
+                    exc_info=True
+                )
+                # Mark for removal
+                return subscriber
+            return None
+        
+        # Create tasks for all subscribers concurrently
+        tasks = [
+            asyncio.create_task(notify_single_subscriber(sub))
+            for sub in self._subscribers
+        ]
+        
+        # Wait for all notifications to complete (or fail)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Remove disconnected subscribers
+        disconnected = {
+            result for result in results 
+            if result is not None and not isinstance(result, Exception)
+        }
         self._subscribers -= disconnected
+        
+        # Log if any subscribers were disconnected
+        if disconnected:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Removed {len(disconnected)} disconnected subscriber(s) for alert {alert.alert_id}")
     
     def subscribe(self, callback: Callable):
         """Subscribe to alert updates."""
