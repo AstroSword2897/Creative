@@ -1,4 +1,4 @@
-import { SimulationState } from '../types'
+import { SimulationState, Incident } from '../types'
 
 interface MetricsPanelProps {
   state: SimulationState | null
@@ -224,7 +224,7 @@ export default function MetricsPanel({ state }: MetricsPanelProps) {
             Active Incidents
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
-            {incidents.map(incident => (
+            {incidents.map((incident: Incident) => (
               <div
                 key={incident.id}
                 className="card-incident animate-slide-in"

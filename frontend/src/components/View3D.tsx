@@ -289,12 +289,12 @@ export default function View3D({ state }: View3DProps) {
     
     // Add coordinate markers at corners to show the map bounds
     const cornerMarkers = [
-      { pos: [0, 0.05, 0], label: 'SW' },
-      { pos: [1, 0.05, 0], label: 'SE' },
-      { pos: [0, 0.05, 1], label: 'NW' },
-      { pos: [1, 0.05, 1], label: 'NE' },
+      [0, 0.05, 0], // SW
+      [1, 0.05, 0], // SE
+      [0, 0.05, 1], // NW
+      [1, 0.05, 1], // NE
     ]
-    cornerMarkers.forEach(({ pos, label }) => {
+    cornerMarkers.forEach((pos) => {
       const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8)
       const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
       const marker = new THREE.Mesh(markerGeometry, markerMaterial)
