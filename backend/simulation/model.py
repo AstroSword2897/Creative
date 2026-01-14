@@ -379,9 +379,11 @@ class SpecialOlympicsModel(Model):
                     athlete._plan_route()
         
         elif event_type == "medical_event":
-            venue = event.get("venue")
-            severity = event.get("severity", 1)
-            self._trigger_medical_event_at_venue(venue, severity)
+            # ✅ DISABLED: Medical events are prevented - skip processing
+            pass
+            # venue = event.get("venue")
+            # severity = event.get("severity", 1)
+            # self._trigger_medical_event_at_venue(venue, severity)
         
         elif event_type == "suspicious_person":
             location = event.get("location")
@@ -414,17 +416,21 @@ class SpecialOlympicsModel(Model):
     
     def _trigger_medical_event_at_venue(self, venue: str, severity: int):
         """Trigger medical event at specific venue."""
-        if venue not in self.venues:
-            return
+        # ✅ DISABLED: Medical events are prevented - do nothing
+        return
         
-        venue_loc = (self.venues[venue]["lat"], self.venues[venue]["lon"])
-        nearby_athletes = self.get_agents_near(venue_loc, 0.01, agent_type=Athlete)
-        
-        if nearby_athletes:
-            athlete = random.choice(nearby_athletes)
-            athlete.medical_event = True
-            athlete.status = "emergency"
-            self.trigger_medical_event(athlete)
+        # Original code commented out - medical events disabled
+        # if venue not in self.venues:
+        #     return
+        # 
+        # venue_loc = (self.venues[venue]["lat"], self.venues[venue]["lon"])
+        # nearby_athletes = self.get_agents_near(venue_loc, 0.01, agent_type=Athlete)
+        # 
+        # if nearby_athletes:
+        #     athlete = random.choice(nearby_athletes)
+        #     athlete.medical_event = True
+        #     athlete.status = "emergency"
+        #     self.trigger_medical_event(athlete)
     
     def _trigger_suspicious_person(self, location: Tuple[float, float]):
         """Trigger suspicious person incident."""

@@ -18,7 +18,7 @@ class Athlete(Agent):
         model,
         role: str = "athlete",
         mobility: str = "walking",  # "walking", "wheelchair", "assisted"
-        medical_risk: float = 0.1,
+        medical_risk: float = 0.0,  # ✅ DISABLED: Set to 0 to prevent medical events
         badge_token: Optional[str] = None,
         schedule: Optional[Dict] = None,
     ):
@@ -27,7 +27,7 @@ class Athlete(Agent):
         self.unique_id = unique_id
         self.role = role
         self.mobility = mobility
-        self.medical_risk = medical_risk
+        self.medical_risk = 0.0  # ✅ CONSTANT: Always 0 to prevent medical events
         self.badge_token = badge_token or f"ATH_{unique_id:04d}"
         self.schedule = schedule or {}
         self.current_location = None
