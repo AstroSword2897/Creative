@@ -163,7 +163,9 @@ export default function View3D({ state }: View3DProps) {
     mesh.position.set(x, baseHeight, z)
     
     // Scale for visibility (very large scale to ensure visibility)
-    mesh.scale.set(8, 8, 8) // Increased to 8x for maximum visibility
+    // Scale based on agent type - larger for better visibility
+    const scale = agent.type === 'bus' ? 12 : agent.type === 'athlete' ? 10 : 8
+    mesh.scale.set(scale, scale, scale)
     
     mesh.castShadow = false // Disable shadows for better performance
     mesh.receiveShadow = false
@@ -209,10 +211,10 @@ export default function View3D({ state }: View3DProps) {
       0.1,
       1000
     )
-    // Camera positioned to see the full 0-1 plane with better view of agents
-    // Higher camera position for better overview, looking down at the scene
-    camera.position.set(0.5, 1.5, 1.5) // Higher camera for better overview
-    camera.lookAt(0.5, 0.1, 0.5) // Look at center of the scene
+    // Camera positioned to see the full 0-1 plane - top-down view for maximum visibility
+    // Position camera high above, looking straight down at the entire scene
+    camera.position.set(0.5, 2.0, 0.5) // Directly above center, high up
+    camera.lookAt(0.5, 0, 0.5) // Look straight down at ground level
     cameraRef.current = camera
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }) // Solid background
@@ -280,10 +282,25 @@ export default function View3D({ state }: View3DProps) {
     ground.receiveShadow = true
     scene.add(ground)
 
-    // Grid helper
-    const gridHelper = new THREE.GridHelper(1, 20, 0x333344, 0x222233)
+    // Grid helper - larger and more visible to show coordinate system
+    const gridHelper = new THREE.GridHelper(1, 10, 0x00ff00, 0x008800) // Green grid for visibility
     gridHelper.position.set(0.5, 0.01, 0.5)
     scene.add(gridHelper)
+    
+    // Add coordinate markers at corners to show the map bounds
+    const cornerMarkers = [
+      { pos: [0, 0.05, 0], label: 'SW' },
+      { pos: [1, 0.05, 0], label: 'SE' },
+      { pos: [0, 0.05, 1], label: 'NW' },
+      { pos: [1, 0.05, 1], label: 'NE' },
+    ]
+    cornerMarkers.forEach(({ pos, label }) => {
+      const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8)
+      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial)
+      marker.position.set(pos[0], pos[1], pos[2])
+      scene.add(marker)
+    })
     
     // DEBUG: Add bright test objects to verify scene renders (larger, longer-lasting)
     const testCubeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
@@ -330,7 +347,9 @@ export default function View3D({ state }: View3DProps) {
       controls.enablePan = true
       controls.minDistance = 0.3
       controls.maxDistance = 5
-      controls.target.set(0.5, 0.05, 0.5) // Look at agent height level
+      controls.target.set(0.5, 0, 0.5) // Look at ground level
+      controls.minDistance = 0.5
+      controls.maxDistance = 5
       controlsRef.current = controls
     }).catch(() => {
       // Fallback: basic mouse controls

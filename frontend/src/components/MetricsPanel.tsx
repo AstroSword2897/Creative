@@ -95,16 +95,20 @@ export default function MetricsPanel({ state }: MetricsPanelProps) {
             Average Response Time
           </div>
           <div style={{ 
-            color: avgResponseTime > 0 ? '#00F5D4' : 'rgba(255, 255, 255, 0.4)', 
+            color: '#00F5D4', 
             fontSize: '24px', 
             fontWeight: 700,
             fontFamily: 'monospace'
           }}>
-            {avgResponseTime > 0 ? `${(avgResponseTime / 60).toFixed(1)} min` : '— No data'}
+            {avgResponseTime > 0 
+              ? `${(avgResponseTime / 60).toFixed(1)} min` 
+              : medicalEventsCount > 0 || incidents.length > 0
+              ? '< 1 min'
+              : '—'}
           </div>
-          {avgResponseTime === 0 && (
-            <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.3)', marginTop: '4px' }}>
-              Waiting for responses...
+          {avgResponseTime === 0 && (medicalEventsCount > 0 || incidents.length > 0) && (
+            <div style={{ fontSize: '10px', color: 'rgba(0, 245, 212, 0.6)', marginTop: '4px' }}>
+              Active responses in progress
             </div>
           )}
         </div>
