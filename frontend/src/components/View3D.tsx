@@ -962,29 +962,98 @@ export default function View3D({ state }: View3DProps) {
         )}
       </div>
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-10 text-white text-xs bg-black/70 px-3 py-2 rounded backdrop-blur-sm border border-white/10">
-        <div className="font-semibold mb-2" style={{ fontSize: '13px', fontWeight: 600 }}>Legend</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#F4C430', flexShrink: 0 }}></div>
-            <span>Athletes</span>
+      {/* ✅ ENHANCED: Legend - Always visible with distinct shape indicators */}
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '20px',
+        background: 'rgba(18, 20, 23, 0.95)',
+        padding: '20px',
+        borderRadius: '12px',
+        border: '2px solid rgba(255, 255, 255, 0.15)',
+        zIndex: 1000,
+        pointerEvents: 'none',
+        backdropFilter: 'blur(15px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        minWidth: '200px',
+      }}>
+        <div style={{ 
+          fontSize: '14px', 
+          fontWeight: 700, 
+          marginBottom: '16px', 
+          color: '#fff',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+        }}>
+          Agent Types
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '16px', 
+              height: '16px', 
+              borderRadius: '50%', 
+              backgroundColor: '#F4C430', 
+              border: '2px solid rgba(255,255,255,0.9)',
+              boxShadow: '0 0 8px #F4C430',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Athletes (Sphere)</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2ECC71', flexShrink: 0 }}></div>
-            <span>Volunteers</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '0', 
+              height: '0', 
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderBottom: '16px solid #2ECC71',
+              filter: 'drop-shadow(0 0 4px #2ECC71)',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Volunteers (Cone)</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#00F5D4', flexShrink: 0 }}></div>
-            <span>Security</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '12px', 
+              height: '16px', 
+              backgroundColor: '#00F5D4', 
+              border: '2px solid rgba(255,255,255,0.9)',
+              borderRadius: '2px',
+              boxShadow: '0 0 8px #00F5D4',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Hotel Security (Cylinder)</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#0077FF', flexShrink: 0 }}></div>
-            <span>LVMPD</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '16px', 
+              height: '16px', 
+              backgroundColor: '#0077FF', 
+              border: '2px solid rgba(255,255,255,0.9)',
+              transform: 'rotate(45deg)',
+              boxShadow: '0 0 8px #0077FF',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>LVMPD (Diamond)</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#E74C3C', flexShrink: 0 }}></div>
-            <span>AMR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '0', 
+              height: '0', 
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderBottom: '12px solid #E74C3C',
+              borderTop: '4px solid transparent',
+              filter: 'drop-shadow(0 0 4px #E74C3C)',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>AMR (Triangle)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '16px', 
+              height: '10px', 
+              backgroundColor: '#6366F1', 
+              border: '2px solid rgba(255,255,255,0.9)',
+              borderRadius: '2px',
+              boxShadow: '0 0 8px #6366F1',
+            }} />
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Buses (Box)</span>
           </div>
         </div>
       </div>
