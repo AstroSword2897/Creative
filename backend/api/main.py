@@ -520,7 +520,7 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
                     })
                     
                     if not success:
-                        print(f"WebSocket disconnected, stopping stream for run {run_id}")
+                        print(f"⚠️ WebSocket disconnected while sending update, stopping stream for run {run_id}")
                         break
                     
                     # Send alert metrics periodically
