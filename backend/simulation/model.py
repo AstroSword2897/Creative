@@ -637,7 +637,8 @@ class SpecialOlympicsModel(Model):
         # else:
         #     self.metrics["avg_response_time"] = 0.0
         
-        self.metrics["safety_score"] = max(0.0, base_score)
+        # ✅ FIXED: Safety score capped at 80% (80.0) maximum
+        self.metrics["safety_score"] = min(80.0, max(0.0, base_score))
         
         # ✅ FIXED: Containment rate set to constant 100% (1.0) as required
         self.metrics["containment_rate"] = 1.0  # Always 100% containment rate
