@@ -41,6 +41,8 @@ function App() {
   const abortRef = useRef<AbortController | null>(null)
   // ✅ ENHANCED: Store current run ID for reconnection
   const currentRunIdRef = useRef<string | null>(null)
+  // ✅ Metrics fallback polling (when WS is flaky or 3D is blank, keep metrics alive)
+  const metricsPollRef = useRef<number | null>(null)
 
   useEffect(() => {
     // Load scenarios
@@ -73,8 +75,52 @@ function App() {
         wsRef.current.close()
         wsRef.current = null
       }
+      if (metricsPollRef.current) {
+        window.clearInterval(metricsPollRef.current)
+        metricsPollRef.current = null
+      }
     }
   }, [])
+
+  // ✅ Fallback: if WebSocket drops but we have a run, keep pulling state so MetricsPanel updates.
+  useEffect(() => {
+    const runId = currentRunIdRef.current
+    if (!runId) return
+
+    // Only poll when we believe the sim is running but WS is not reliably connected.
+    const shouldPoll = isRunning && (connectionLost || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
+    if (!shouldPoll) {
+      if (metricsPollRef.current) {
+        window.clearInterval(metricsPollRef.current)
+        metricsPollRef.current = null
+      }
+      return
+    }
+
+    if (metricsPollRef.current) return
+
+    metricsPollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/state`)
+        if (!res.ok) return
+        const state = await res.json()
+        // Backend sometimes wraps { run_id, status, state }
+        const nextState = (state && state.state) ? state.state : state
+        if (nextState && nextState.metrics) {
+          setSimulationState(nextState)
+        }
+      } catch {
+        // Ignore polling errors; WS reconnection will handle primary path.
+      }
+    }, 750)
+
+    return () => {
+      if (metricsPollRef.current) {
+        window.clearInterval(metricsPollRef.current)
+        metricsPollRef.current = null
+      }
+    }
+  }, [isRunning, connectionLost])
 
   const startSimulation = async (scenarioId: string) => {
     try {
