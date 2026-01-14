@@ -753,20 +753,44 @@ class LVMPDUnit(Agent):
             if elapsed < self.dispatch_time:
                 return  # Still preparing
         
-        # Move towards incident
+        # ✅ ENHANCED: Move towards incident using routing
         if self.current_location:
             distance = self._distance(self.current_location, incident_loc)
             if distance < 0.005:  # Arrived
                 self.status = "on_scene"
                 
-                # Record response time
+                # ✅ ENHANCED: Record response time with incident details
                 response_time = (self.model.current_time - self.dispatch_start_time).total_seconds()
                 self.response_times.append({
                     "time": response_time,
                     "location": incident_loc,
+                    "incident_id": self.current_incident.get("id"),
                     "incident_type": self.current_incident.get("type"),
+                    "timestamp": self.model.current_time,
                 })
             else:
+                # ✅ ENHANCED: Use routing for faster response
+                if hasattr(self.model, 'route_planner'):
+                    path = self.model.route_planner.find_path(
+                        self.current_location,
+                        incident_loc,
+                        avoid_hotspots=True  # Avoid crowds for faster response
+                    )
+                    if path and len(path) > 0:
+                        next_point = path[0]
+                        self.current_location = self._move_towards(
+                            self.current_location, next_point, 15.0  # Fast response
+                        )
+                    else:
+                        # Fallback to direct movement
+                        self.current_location = self._move_towards(
+                            self.current_location, incident_loc, 15.0  # Fast response
+                        )
+                else:
+                    # Direct movement
+                    self.current_location = self._move_towards(
+                        self.current_location, incident_loc, 15.0  # Fast response
+                    )
                 # Clear pathway while moving
                 self._clear_pathway_while_moving(incident_loc)
                 
