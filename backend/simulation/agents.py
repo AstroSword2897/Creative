@@ -1126,7 +1126,7 @@ class Bus(Agent):
                 self.total_boardings += 1
     
     def _follow_route(self):
-        """Follow assigned route."""
+        """✅ ENHANCED: Follow assigned route with better pathfinding."""
         if not self.route:
             return
         
@@ -1137,26 +1137,63 @@ class Bus(Agent):
         if self.current_location:
             distance = self._distance(self.current_location, target)
             if distance < 0.001:
+                # ✅ ENHANCED: Allow passengers to disembark at stops
+                self._handle_disembarking()
                 self.route_index += 1
             else:
-                self.current_location = self._move_towards(
-                    self.current_location, target, 8.0  # Bus speed
-                )
+                # ✅ ENHANCED: Use routing for smoother movement
+                if hasattr(self.model, 'route_planner') and distance > 0.01:
+                    # Use routing for longer distances
+                    path = self.model.route_planner.find_path(
+                        self.current_location,
+                        target,
+                        avoid_hotspots=False  # Buses follow routes, not avoid crowds
+                    )
+                    if path and len(path) > 0:
+                        next_point = path[0]
+                        self.current_location = self._move_towards(
+                            self.current_location, next_point, 8.0  # Bus speed
+                        )
+                    else:
+                        # Fallback to direct movement
+                        self.current_location = self._move_towards(
+                            self.current_location, target, 8.0  # Bus speed
+                        )
+                else:
+                    # Direct movement for short distances
+                    self.current_location = self._move_towards(
+                        self.current_location, target, 8.0  # Bus speed
+                    )
         else:
             self.current_location = target
     
+    def _handle_disembarking(self):
+        """✅ ENHANCED: Handle passengers disembarking at stops."""
+        if not self.current_passengers:
+            return
+        
+        # Check if any passengers want to get off at this stop
+        passengers_to_remove = []
+        for passenger in self.current_passengers:
+            # Simplified: passengers get off after some time or at specific stops
+            if hasattr(passenger, 'target_location') and passenger.target_location:
+                distance_to_target = self._distance(self.current_location, passenger.target_location)
+                if distance_to_target < 0.01:  # Close to destination
+                    passengers_to_remove.append(passenger)
+        
+        # Remove passengers
+        for passenger in passengers_to_remove:
+            self.current_passengers.remove(passenger)
+            if hasattr(passenger, 'status'):
+                passenger.status = "at_venue"
+            if hasattr(passenger, 'current_bus'):
+                passenger.current_bus = None
+    
     def _handle_boarding(self):
-        """Handle athlete boarding at stops."""
-        # Simplified: check if athletes are waiting at current stop
-        if self.current_location and len(self.current_passengers) < self.capacity:
-            nearby_athletes = self.model.get_agents_near(
-                self.current_location, 0.002, agent_type=Athlete
-            )
-            for athlete in nearby_athletes:
-                if athlete.status == "waiting" and len(self.current_passengers) < self.capacity:
-                    self.current_passengers.append(athlete)
-                    athlete.status = "traveling"
-                    athlete.current_location = self.current_location
+        """Handle athlete boarding at stops (enhanced logic in _check_for_waiting_athletes)."""
+        # Legacy method - main boarding logic is in _check_for_waiting_athletes
+        # Keep for compatibility but logic is handled elsewhere
+        pass
     
     def _move_towards(self, start: Tuple[float, float], end: Tuple[float, float], speed: float) -> Tuple[float, float]:
         """Move towards target."""
