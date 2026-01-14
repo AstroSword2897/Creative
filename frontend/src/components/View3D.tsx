@@ -6,13 +6,15 @@ interface View3DProps {
   state: SimulationState | null
 }
 
-// Shared geometry cache (created once, reused)
-// Increased base sizes significantly for better visibility
+// ✅ ENHANCED: Distinct shapes for each agent type for easy identification
 const geometryCache = {
-  athlete: new THREE.SphereGeometry(0.04, 16, 16), // Increased to 0.04 for visibility
-  bus: new THREE.BoxGeometry(0.12, 0.06, 0.18), // Increased for visibility
-  responder: new THREE.CylinderGeometry(0.025, 0.022, 0.06, 16), // Increased for visibility
-  default: new THREE.BoxGeometry(0.05, 0.08, 0.05), // Increased for visibility
+  athlete: new THREE.SphereGeometry(0.04, 16, 16), // Sphere - athletes
+  volunteer: new THREE.ConeGeometry(0.03, 0.08, 8), // Cone - volunteers (pointed up)
+  hotel_security: new THREE.CylinderGeometry(0.025, 0.025, 0.08, 8), // Cylinder - hotel security
+  lvmpd: new THREE.OctahedronGeometry(0.04, 0), // Octahedron (diamond) - police
+  amr: new THREE.TetrahedronGeometry(0.04, 0), // Tetrahedron (pyramid) - medical
+  bus: new THREE.BoxGeometry(0.12, 0.06, 0.18), // Box - buses (largest)
+  default: new THREE.BoxGeometry(0.05, 0.08, 0.05), // Default box
 }
 
 // Shared material cache (created once, reused)
@@ -133,15 +135,25 @@ export default function View3D({ state }: View3DProps) {
     let geometry: THREE.BufferGeometry
     let baseMaterial: THREE.Material
 
+    // ✅ ENHANCED: Use distinct shapes for each agent type
     if (agent.type === 'athlete') {
       geometry = geometryCache.athlete
       baseMaterial = materialCache.athlete
+    } else if (agent.type === 'volunteer') {
+      geometry = geometryCache.volunteer
+      baseMaterial = materialCache.volunteer
+    } else if (agent.type === 'hotel_security') {
+      geometry = geometryCache.hotel_security
+      baseMaterial = materialCache.hotel_security
+    } else if (agent.type === 'lvmpd') {
+      geometry = geometryCache.lvmpd
+      baseMaterial = materialCache.lvmpd
+    } else if (agent.type === 'amr') {
+      geometry = geometryCache.amr
+      baseMaterial = materialCache.amr
     } else if (agent.type === 'bus') {
       geometry = geometryCache.bus
       baseMaterial = materialCache.bus
-    } else if (agent.type === 'lvmpd' || agent.type === 'amr') {
-      geometry = geometryCache.responder
-      baseMaterial = materialCache[agent.type] || materialCache.default
     } else {
       geometry = geometryCache.default
       baseMaterial = materialCache[agent.type] || materialCache.default
