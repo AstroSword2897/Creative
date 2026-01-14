@@ -846,12 +846,31 @@ class LVMPDUnit(Agent):
                 }
     
     def _handle_incident(self):
-        """Handle incident on scene with crowd management."""
+        """✅ ENHANCED: Handle incident on scene with better coordination."""
         if not self.current_incident:
             self.status = "available"
             return
         
+        incident_id = self.current_incident.get("id")
+        incident_type = self.current_incident.get("type", "unknown")
         incident_loc = self.current_incident.get("location")
+        
+        # ✅ ENHANCED: Check if incident still exists (may have been resolved by another unit)
+        if incident_id not in [inc.get("id") for inc in self.model.active_incidents]:
+            # Incident already resolved
+            self.current_incident = None
+            self.status = "available"
+            self.pathway_cleared_for = []
+            return
+        
+        # ✅ ENHANCED: Different resolution times based on incident type
+        resolution_times = {
+            "suspicious_person": 180,  # 3 minutes
+            "crowd_congestion": 120,   # 2 minutes
+            "access_control_issue": 240,  # 4 minutes
+            "lost_person": 300,  # 5 minutes
+        }
+        required_time = resolution_times.get(incident_type, 300)  # Default 5 minutes
         
         # Check for crowd management needs
         if incident_loc:
@@ -862,12 +881,28 @@ class LVMPDUnit(Agent):
             if len(nearby_athletes) > 10:
                 # Need crowd management
                 self.status = "crowd_management"
-                return
+                # ✅ ENHANCED: Check if medical units need pathway cleared
+                nearby_medical = [
+                    u for u in self.model.amr_units
+                    if u.status == "dispatched" and u.current_location
+                ]
+                if nearby_medical:
+                    # Clear pathway for medical units
+                    for medical_unit in nearby_medical:
+                        if medical_unit.current_patient:
+                            patient_loc = medical_unit.current_patient.current_location
+                            if patient_loc:
+                                distance = self._distance(incident_loc, patient_loc)
+                                if distance < 0.02:  # Close to medical response
+                                    # Keep managing crowd until medical unit passes
+                                    return
         
-        # Resolve incident after handling time
-        incident_id = self.current_incident.get("id")
-        if incident_id:
-            self.model.resolve_incident(incident_id)
+        # ✅ ENHANCED: Resolve incident after required time
+        incident_age = (self.model.current_time - self.current_incident.get("timestamp", self.model.current_time)).total_seconds()
+        if incident_age > required_time:
+            # Resolve incident
+            if incident_id:
+                self.model.resolve_incident(incident_id)
             self.status = "available"
             self.current_incident = None
             self.pathway_cleared_for = []
