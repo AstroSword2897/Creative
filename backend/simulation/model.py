@@ -648,6 +648,18 @@ class SpecialOlympicsModel(Model):
             else:
                 return obj
         
+        # Helper to get normalized location (frontend expects [0-1] coordinates)
+        def get_normalized_location(agent):
+            """Get normalized position for frontend - use pos if available, otherwise normalize current_location."""
+            if hasattr(agent, 'pos') and agent.pos:
+                return list(agent.pos)
+            elif hasattr(agent, 'current_location') and agent.current_location:
+                # Fallback: normalize current_location
+                return list(self._normalize_coords(agent.current_location[0], agent.current_location[1]))
+            else:
+                # Last resort: return center
+                return [0.5, 0.5]
+        
         # Serialize command center data
         command_center_data = None
         if self.command_center:
@@ -658,17 +670,13 @@ class SpecialOlympicsModel(Model):
             # Convert hotspots location tuples to lists
             hotspots_serialized = [
                 {
-                    "location": list(h["location"]) if isinstance(h["location"], tuple) else h["location"],
+                    "location": list(self._normalize_coords(h["location"][0], h["location"][1])) if isinstance(h["location"], (tuple, list)) and len(h["location"]) == 2 else h.get("location", [0.5, 0.5]),
                     "threat_level": h["threat_level"],
                 }
                 for h in self.command_center.hotspots
             ]
             command_center_data = {
-                "location": (
-                    list(self.command_center.current_location)
-                    if isinstance(self.command_center.current_location, tuple)
-                    else self.command_center.current_location
-                ),
+                "location": get_normalized_location(self.command_center),  # ✅ Send normalized coordinates
                 "threat_map": threat_map_serialized,
                 "hotspots": hotspots_serialized,
             }
@@ -680,84 +688,70 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": a.unique_id,
                         "type": "athlete",
-                        "location": (
-                            list(a.current_location)
-                            if isinstance(a.current_location, tuple)
-                            else a.current_location
-                        ),
+                        "location": get_normalized_location(a),  # ✅ Send normalized coordinates
                         "status": a.status,
                         "medical_event": a.medical_event,
                     }
-                    for a in self.athletes if a.current_location
+                    for a in self.athletes if hasattr(a, 'pos') or (hasattr(a, 'current_location') and a.current_location)
                 ],
                 "volunteers": [
                     {
                         "id": v.unique_id,
                         "type": "volunteer",
-                        "location": (
-                            list(v.current_location)
-                            if isinstance(v.current_location, tuple)
-                            else v.current_location
-                        ),
+                        "location": get_normalized_location(v),  # ✅ Send normalized coordinates
                         "status": v.status,
                     }
-                    for v in self.volunteers if v.current_location
+                    for v in self.volunteers if hasattr(v, 'pos') or (hasattr(v, 'current_location') and v.current_location)
                 ],
                 "security": [
                     {
                         "id": s.unique_id,
                         "type": "hotel_security",
-                        "location": (
-                            list(s.current_location)
-                            if isinstance(s.current_location, tuple)
-                            else s.current_location
-                        ),
+                        "location": get_normalized_location(s),  # ✅ Send normalized coordinates
                         "status": s.status,
                         "hotel_id": s.hotel_id,
                     }
-                    for s in self.hotel_security if s.current_location
+                    for s in self.hotel_security if hasattr(s, 'pos') or (hasattr(s, 'current_location') and s.current_location)
                 ],
                 "lvmpd": [
                     {
                         "id": u.unique_id,
                         "type": "lvmpd",
-                        "location": (
-                            list(u.current_location)
-                            if isinstance(u.current_location, tuple)
-                            else u.current_location
-                        ),
+                        "location": get_normalized_location(u),  # ✅ Send normalized coordinates
                         "status": u.status,
                     }
-                    for u in self.lvmpd_units if u.current_location
+                    for u in self.lvmpd_units if hasattr(u, 'pos') or (hasattr(u, 'current_location') and u.current_location)
                 ],
                 "amr": [
                     {
                         "id": u.unique_id,
                         "type": "amr",
-                        "location": (
-                            list(u.current_location)
-                            if isinstance(u.current_location, tuple)
-                            else u.current_location
-                        ),
+                        "location": get_normalized_location(u),  # ✅ Send normalized coordinates
                         "status": u.status,
                     }
-                    for u in self.amr_units if u.current_location
+                    for u in self.amr_units if hasattr(u, 'pos') or (hasattr(u, 'current_location') and u.current_location)
                 ],
                 "buses": [
                     {
                         "id": b.unique_id,
                         "type": "bus",
-                        "location": (
-                            list(b.current_location)
-                            if isinstance(b.current_location, tuple)
-                            else b.current_location
-                        ),
+                        "location": get_normalized_location(b),  # ✅ Send normalized coordinates
                         "status": b.status,
                     }
-                    for b in self.buses if b.current_location
+                    for b in self.buses if hasattr(b, 'pos') or (hasattr(b, 'current_location') and b.current_location)
                 ],
             },
-            "incidents": make_serializable(self.active_incidents),
+            "incidents": [
+                {
+                    **incident,
+                    "location": (
+                        list(self._normalize_coords(incident["location"][0], incident["location"][1]))
+                        if isinstance(incident.get("location"), (list, tuple)) and len(incident["location"]) == 2
+                        else incident.get("location", [0.5, 0.5])
+                    )
+                }
+                for incident in make_serializable(self.active_incidents)
+            ],
             "metrics": make_serializable(self.metrics),
             "command_center": command_center_data,
             "security_metrics": {

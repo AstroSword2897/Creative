@@ -92,32 +92,36 @@ class IntegratedSimulationSystems:
         # If avoiding hotspots, temporarily increase load on hotspot nodes
         if avoid_hotspots:
             hotspots = self.analytics.get_hotspots(metric="crowd_density", threshold=0.7)
+            # ✅ CRITICAL: Force sync routing loads before pathfinding (avoids stale data)
+            self.routing.update_loads_from_analytics(self.analytics)
+            
             original_loads = {}
             
-            # Increase load on hotspot nodes
-            for hotspot in hotspots:
-                location = hotspot["location"]
-                node_id = self.routing._nearest_node(location)
-                if node_id:
-                    node = self.routing.get_node(node_id)
-                    if node:
-                        original_loads[node_id] = node.current_load
-                        # Increase load significantly to discourage routing through hotspots
-                        self.routing.update_node_load(node_id, node.current_load + 200)
-            
-            # Find path
-            path = self.routing.find_path(
-                start=start,
-                end=end,
-                accessibility_required=accessibility_required,
-                algorithm=algorithm
-            )
-            
-            # Restore original loads
-            for node_id, original_load in original_loads.items():
-                self.routing.update_node_load(node_id, original_load)
-            
-            return path
+            try:
+                # Increase load on hotspot nodes
+                for hotspot in hotspots:
+                    location = hotspot["location"]
+                    node_id = self.routing._nearest_node(location)
+                    if node_id:
+                        node = self.routing.get_node(node_id)
+                        if node:
+                            original_loads[node_id] = node.current_load
+                            # Increase load significantly to discourage routing through hotspots
+                            self.routing.update_node_load(node_id, node.current_load + 200)
+                
+                # Find path
+                path = self.routing.find_path(
+                    start=start,
+                    end=end,
+                    accessibility_required=accessibility_required,
+                    algorithm=algorithm
+                )
+                
+                return path
+            finally:
+                # ✅ CRITICAL: Always restore original loads, even if pathfinding fails
+                for node_id, original_load in original_loads.items():
+                    self.routing.update_node_load(node_id, original_load)
         
         # Standard pathfinding
         return self.routing.find_path(

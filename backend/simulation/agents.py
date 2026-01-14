@@ -172,6 +172,11 @@ class Volunteer(Agent):
             self._patrol()
         elif self.status == "assisting":
             self._assist_athlete()
+        
+        # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
+        if self.current_location:
+            self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
+            self.model.space.move_agent(self, self.pos)
     
     def _patrol(self):
         """Patrol assigned area."""
@@ -275,6 +280,11 @@ class HotelSecurity(Agent):
             self._coordinate_with_units()
         elif self.status == "crowd_management":
             self._manage_crowd_flow()
+        
+        # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
+        if self.current_location:
+            self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
+            self.model.space.move_agent(self, self.pos)
     
     def _assess_threats(self):
         """Assess threat level in patrol area."""
@@ -584,6 +594,11 @@ class LVMPDUnit(Agent):
             self._coordinate_with_units()
         elif self.status == "crowd_management":
             self._manage_crowd_flow()
+        
+        # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
+        if self.current_location:
+            self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
+            self.model.space.move_agent(self, self.pos)
     
     def _get_highest_priority_incident(self) -> Optional[Dict]:
         """Get highest priority incident using threat assessment."""
@@ -872,6 +887,11 @@ class AMRUnit(Agent):
             self._respond_to_medical()
         elif self.status == "transporting":
             self._transport_patient()
+        
+        # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
+        if self.current_location:
+            self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
+            self.model.space.move_agent(self, self.pos)
     
     def _respond_to_medical(self):
         """Respond to medical emergency."""
@@ -956,6 +976,11 @@ class Bus(Agent):
         if self.status == "in_service":
             self._follow_route()
             self._handle_boarding()
+        
+        # ✅ CRITICAL: Sync position to Mesa space (frontend needs this)
+        if self.current_location:
+            self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
+            self.model.space.move_agent(self, self.pos)
     
     def _follow_route(self):
         """Follow assigned route."""
