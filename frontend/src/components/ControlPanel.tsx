@@ -205,14 +205,17 @@ export default function ControlPanel({
   wsConnecting = false,
 }: ControlPanelProps) {
   const handleScenarioClick = (scenarioId: string) => {
-    if (isRunning || isLoading) {
+    // ✅ ENHANCED: Allow clicking even if simulation is running (switches scenarios)
+    // Only prevent if already loading the same scenario
+    if (isLoading && selectedScenario === scenarioId) {
       return
     }
     
     if (process.env.NODE_ENV === 'development') {
-      console.log('🔘 Scenario button clicked:', scenarioId)
+      console.log('🔘 Scenario button clicked:', scenarioId, isRunning ? '(switching scenario)' : '(starting new)')
     }
     
+    // Immediately start simulation - no confirmation needed
     onStartSimulation(scenarioId)
   }
 
@@ -260,7 +263,7 @@ export default function ControlPanel({
               key={scenario.id}
               scenario={scenario}
               isSelected={selectedScenario === scenario.id}
-              isDisabled={isRunning}
+              isDisabled={isLoading && selectedScenario === scenario.id} // ✅ Only disable if loading THIS scenario
               isLoading={isLoading && selectedScenario === scenario.id}
               onSelect={() => handleScenarioClick(scenario.id)}
             />

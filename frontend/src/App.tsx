@@ -70,11 +70,18 @@ function App() {
 
   const startSimulation = async (scenarioId: string) => {
     try {
-      console.log('🚀 Starting simulation for scenario:', scenarioId)
+      console.log('🚀 Starting simulation for scenario:', scenarioId, isRunning ? '(switching from running sim)' : '(new simulation)')
       
-      // Abort any in-flight requests
+      // ✅ ENHANCED: Abort any in-flight requests and close existing connections
       abortRef.current?.abort()
       abortRef.current = new AbortController()
+      
+      // Close existing WebSocket immediately to allow switching scenarios
+      if (wsRef.current) {
+        console.log('Closing existing WebSocket to switch scenario')
+        wsRef.current.close()
+        wsRef.current = null
+      }
       
       // Set loading state immediately to prevent double-clicks
       setIsLoading(true)
@@ -84,15 +91,8 @@ function App() {
       setWsConnecting(false)
       setSelectedScenario(scenarioId) // Set immediately for visual feedback
       
-      // Close existing WebSocket if any
-      if (wsRef.current) {
-        console.log('Closing existing WebSocket')
-        wsRef.current.close()
-        wsRef.current = null
-      }
-
-      // Set running to true immediately to prevent multiple clicks
-      setIsRunning(true)
+      // ✅ ENHANCED: Reset running state when switching scenarios
+      setIsRunning(false) // Will be set to true after API call succeeds
 
       console.log('📡 Calling API to start simulation...')
       const response = await fetch(`/api/scenarios/${scenarioId}/run`, {
