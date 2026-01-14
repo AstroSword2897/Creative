@@ -24,12 +24,14 @@ export default function MapView({ state }: MapViewProps) {
       zoom: 12,
     })
 
-    // Add custom styling for premium look
+    // Add custom styling for premium look and resize on load
     map.current.on('load', () => {
       // Add glow effect to map container
       if (mapContainer.current) {
         mapContainer.current.style.boxShadow = 'inset 0 0 100px rgba(0, 119, 255, 0.1)'
       }
+      // ✅ CRITICAL: Resize map after load to ensure it renders
+      map.current?.resize()
     })
 
     return () => {
@@ -39,6 +41,9 @@ export default function MapView({ state }: MapViewProps) {
 
   useEffect(() => {
     if (!map.current || !state) return
+
+    // ✅ CRITICAL: Resize map when state updates to ensure visibility
+    map.current.resize()
 
     // Clear existing markers
     markers.current.forEach(marker => marker.remove())
@@ -81,7 +86,15 @@ export default function MapView({ state }: MapViewProps) {
   }, [state])
 
   return (
-    <div ref={mapContainer} className="w-full h-full" />
+    <div 
+      ref={mapContainer} 
+      style={{
+        width: '100%',
+        height: '100%',
+        minHeight: '400px', // ✅ Ensure minimum height
+        position: 'relative',
+      }}
+    />
   )
 }
 

@@ -85,8 +85,9 @@ export default function View3D({ state }: View3DProps) {
   const trailsRef = useRef<Map<number, { line: THREE.Line, buffer: Float32Array, index: number, maxPoints: number }>>(new Map())
   const animationFrameRef = useRef<number | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
-  // Use a ref to track initialization to prevent dependency loops
+  // Use a ref to track initialization to prevent dependency loops and StrictMode double-mount
   const isInitializedRef = useRef(false)
+  const initializationAttemptRef = useRef(false) // Prevent multiple init attempts
   // Store target positions for smooth interpolation
   const agentTargetsRef = useRef<Map<number, { x: number, z: number, startX: number, startZ: number, startTime: number, duration: number }>>(new Map())
   // Track last processed state time to prevent duplicate updates
@@ -173,378 +174,412 @@ export default function View3D({ state }: View3DProps) {
     return mesh
   }
 
-  // Initialize scene (runs once)
+  // Initialize scene (runs once) - with proper size waiting and idempotency guards
   useEffect(() => {
-    // Use ref to prevent re-initialization loops
-    if (!containerRef.current || isInitializedRef.current) return
-
-    // Debug: Check container dimensions
-    const width = containerRef.current.clientWidth
-    const height = containerRef.current.clientHeight
-    console.log(`📐 View3D: Container dimensions - width: ${width}, height: ${height}`)
-    
-    if (width === 0 || height === 0) {
-      console.warn('⚠️ View3D: Container has zero dimensions, retrying...')
-      // Retry after a short delay
-      setTimeout(() => {
-        if (containerRef.current && !isInitializedRef.current) {
-          const retryWidth = containerRef.current.clientWidth
-          const retryHeight = containerRef.current.clientHeight
-          console.log('📐 View3D: Retry dimensions', { retryWidth, retryHeight })
-          if (retryWidth > 0 && retryHeight > 0) {
-            // Force re-run by resetting the ref
-            isInitializedRef.current = false
-          }
-        }
-      }, 100)
+    // Guard against double initialization (StrictMode protection)
+    if (isInitializedRef.current || initializationAttemptRef.current) {
       return
     }
+    initializationAttemptRef.current = true
 
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x0a0a0f)
-    scene.fog = new THREE.Fog(0x0a0a0f, 10, 50)
-    sceneRef.current = scene
+    let raf: number | null = null
+    let timeoutId: NodeJS.Timeout | null = null
 
-    const camera = new THREE.PerspectiveCamera(
-      60,
-      width / height,
-      0.1,
-      1000
-    )
-    // Camera positioned to see the full 0-1 plane - top-down view for maximum visibility
-    // Position camera high above, looking straight down at the entire scene
-    camera.position.set(0.5, 2.0, 0.5) // Directly above center, high up
-    camera.lookAt(0.5, 0, 0.5) // Look straight down at ground level
-    cameraRef.current = camera
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }) // Solid background
-    renderer.setSize(width, height)
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)) // Clamp for performance
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    
-    // Ensure canvas is visible and properly positioned
-    renderer.domElement.style.display = 'block'
-    renderer.domElement.style.width = '100%'
-    renderer.domElement.style.height = '100%'
-    renderer.domElement.style.position = 'absolute'
-    renderer.domElement.style.top = '0'
-    renderer.domElement.style.left = '0'
-    renderer.domElement.style.zIndex = '0'
-    renderer.domElement.style.outline = 'none' // Remove focus outline
-    renderer.domElement.style.background = '#0a0a0f' // Ensure background color
-    
-    // Clear the container before appending
-    if (containerRef.current) {
-      // Remove any existing canvas
-      const existingCanvas = containerRef.current.querySelector('canvas')
-      if (existingCanvas) {
-        containerRef.current.removeChild(existingCanvas)
-      }
-      containerRef.current.appendChild(renderer.domElement)
+    const waitForSize = (): boolean => {
+      if (!containerRef.current) return false
+      const { clientWidth, clientHeight } = containerRef.current
+      return clientWidth > 0 && clientHeight > 0
     }
-    rendererRef.current = renderer
-    
-    // Force initial render to ensure canvas is visible
-    renderer.render(scene, camera)
-    
-    console.log(`✅ View3D: Renderer created - canvas: ${renderer.domElement.width}x${renderer.domElement.height}, pixelRatio: ${renderer.getPixelRatio()}, style: ${renderer.domElement.style.display}`)
 
-    // Lighting - brighter for better visibility
-    // Lighting - very bright for maximum visibility
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0) // Maximum ambient
-    scene.add(ambientLight)
-
-    const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.2) // Increased intensity
-    directionalLight.position.set(1, 2, 1)
-    directionalLight.castShadow = false // Disable shadows for better performance
-    scene.add(directionalLight)
-    
-    // Add additional point light for better visibility
-    const pointLight = new THREE.PointLight(0xffffff, 0.8, 10)
-    pointLight.position.set(0.5, 1.5, 0.5)
-    scene.add(pointLight)
-    
-    // Add hemisphere light for even better visibility
-    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
-    scene.add(hemisphereLight)
-
-    // Ground plane
-    const groundGeometry = new THREE.PlaneGeometry(1, 1)
-    const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1a1a2e,
-      roughness: 0.9,
-      metalness: 0.1,
-    })
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial)
-    ground.rotation.x = -Math.PI / 2
-    ground.position.set(0.5, 0, 0.5)
-    ground.receiveShadow = true
-    scene.add(ground)
-
-    // Grid helper - larger and more visible to show coordinate system
-    const gridHelper = new THREE.GridHelper(1, 10, 0x00ff00, 0x008800) // Green grid for visibility
-    gridHelper.position.set(0.5, 0.01, 0.5)
-    scene.add(gridHelper)
-    
-    // Add coordinate markers at corners to show the map bounds
-    const cornerMarkers = [
-      [0, 0.05, 0], // SW
-      [1, 0.05, 0], // SE
-      [0, 0.05, 1], // NW
-      [1, 0.05, 1], // NE
-    ]
-    cornerMarkers.forEach((pos) => {
-      const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8)
-      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial)
-      marker.position.set(pos[0], pos[1], pos[2])
-      scene.add(marker)
-    })
-    
-    // DEBUG: Add bright test objects to verify scene renders (larger, longer-lasting)
-    const testCubeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
-    const testCubeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    const testCube = new THREE.Mesh(testCubeGeometry, testCubeMaterial)
-    testCube.position.set(0.5, 0.15, 0.5)
-    scene.add(testCube)
-    console.log('🔴 View3D: RED TEST CUBE added at center (0.5, 0.15, 0.5) - should be visible!')
-    
-    // Also add a green sphere
-    const testSphereGeometry = new THREE.SphereGeometry(0.06, 16, 16)
-    const testSphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-    const testSphere = new THREE.Mesh(testSphereGeometry, testSphereMaterial)
-    testSphere.position.set(0.6, 0.15, 0.5)
-    scene.add(testSphere)
-    console.log('🟢 View3D: GREEN TEST SPHERE added at (0.6, 0.15, 0.5)')
-    
-    // Remove test objects after 5 seconds (faster cleanup)
-    setTimeout(() => {
-      if (scene.children.includes(testCube)) {
-        scene.remove(testCube)
-        testCubeGeometry.dispose()
-        testCubeMaterial.dispose()
-        console.log('🔴 View3D: Test cube removed')
-      }
-      if (scene.children.includes(testSphere)) {
-        scene.remove(testSphere)
-        testSphereGeometry.dispose()
-        testSphereMaterial.dispose()
-        console.log('🟢 View3D: Test sphere removed')
-      }
-    }, 5000) // Reduced from 10 seconds to 5 seconds
-
-    // Venues removed - they were confusing in the visualization
-    // Focus is on agents and their movement only
-
-    // Orbit controls
-    import('three/examples/jsm/controls/OrbitControls.js').then((module) => {
-      const OrbitControls = module.OrbitControls
-      const controls = new OrbitControls(camera, renderer.domElement)
-      controls.enableDamping = true
-      controls.dampingFactor = 0.05
-      controls.enableZoom = true
-      controls.enablePan = true
-      controls.minDistance = 0.3
-      controls.maxDistance = 5
-      controls.target.set(0.5, 0, 0.5) // Look at ground level
-      controls.minDistance = 0.5
-      controls.maxDistance = 5
-      controlsRef.current = controls
-    }).catch(() => {
-      // Fallback: basic mouse controls
-      let isDragging = false
-      let previousMousePosition = { x: 0, y: 0 }
-      
-      const onMouseDown = (e: MouseEvent) => {
-        isDragging = true
-        previousMousePosition = { x: e.clientX, y: e.clientY }
-      }
-      
-      const onMouseMove = (e: MouseEvent) => {
-        if (!isDragging) return
-        const deltaX = e.clientX - previousMousePosition.x
-        const deltaY = e.clientY - previousMousePosition.y
-        camera.position.x -= deltaX * 0.001
-        camera.position.y += deltaY * 0.001
-        camera.lookAt(0.5, 0.05, 0.5)
-        previousMousePosition = { x: e.clientX, y: e.clientY }
-      }
-      
-      const onMouseUp = () => {
-        isDragging = false
-      }
-      
-      const onWheel = (e: WheelEvent) => {
-        const zoomFactor = Math.max(0.3, Math.min(5, 1 + e.deltaY * 0.001))
-        camera.position.multiplyScalar(zoomFactor)
-        camera.lookAt(0.5, 0.05, 0.5)
-      }
-      
-      renderer.domElement.addEventListener('mousedown', onMouseDown)
-      renderer.domElement.addEventListener('mousemove', onMouseMove)
-      renderer.domElement.addEventListener('mouseup', onMouseUp)
-      renderer.domElement.addEventListener('wheel', onWheel)
-      
-      // Store cleanup function
-      controlsRef.current = {
-        update: () => {},
-        dispose: () => {
-          renderer.domElement.removeEventListener('mousedown', onMouseDown)
-          renderer.domElement.removeEventListener('mousemove', onMouseMove)
-          renderer.domElement.removeEventListener('mouseup', onMouseUp)
-          renderer.domElement.removeEventListener('wheel', onWheel)
-        }
-      }
-    })
-
-    // Mark as initialized using both state and ref
-    isInitializedRef.current = true
-    setIsInitialized(true)
-
-    // Animation loop - ensure it always runs
-    const animate = () => {
-      if (!renderer || !camera || !scene) {
-        // Retry if not ready yet
-        animationFrameRef.current = requestAnimationFrame(animate)
+    const init = () => {
+      // Check if already initialized (race condition protection)
+      if (isInitializedRef.current) {
+        if (raf) cancelAnimationFrame(raf)
         return
       }
-      
-      animationFrameRef.current = requestAnimationFrame(animate)
-      
-      if (controlsRef.current && controlsRef.current.update) {
-        controlsRef.current.update()
+
+      if (!containerRef.current) {
+        raf = requestAnimationFrame(init)
+        return
       }
 
-      // Animate incidents (pulsing)
-      const time = Date.now() * 0.001
-      incidentsRef.current.forEach((mesh) => {
-        const scale = 1 + Math.sin(time * 3) * 0.15
-        mesh.scale.set(scale, scale, scale)
-        if ((mesh.material as THREE.MeshStandardMaterial).emissive) {
-          const intensity = 0.3 + Math.sin(time * 3) * 0.1
-          ;(mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = intensity
+      if (!waitForSize()) {
+        raf = requestAnimationFrame(init)
+        return
+      }
+
+      // SAFE to initialize - container has size
+      const width = containerRef.current.clientWidth
+      const height = containerRef.current.clientHeight
+      console.log(`✅ View3D: Initializing with dimensions - width: ${width}, height: ${height}`)
+
+      // Mark as initializing to prevent double init
+      isInitializedRef.current = true
+
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color(0x0a0a0f)
+      // Temporarily disable fog to rule out visibility issues
+      // scene.fog = new THREE.Fog(0x0a0a0f, 10, 50)
+      sceneRef.current = scene
+
+      // Camera positioned to see the full 0-1 plane - top-down view for maximum visibility
+      // Position camera high above, looking straight down at the entire scene
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        width / height,
+        0.1,
+        1000
+      )
+      camera.position.set(0.5, 1, 1.5) // Better default position for visibility
+      camera.lookAt(0.5, 0, 0.5) // Look straight down at ground level
+      cameraRef.current = camera
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }) // Solid background
+      renderer.setSize(width, height)
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)) // Clamp for performance
+      renderer.shadowMap.enabled = true
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      
+      // Ensure canvas is visible and properly positioned
+      renderer.domElement.style.display = 'block'
+      renderer.domElement.style.width = '100%'
+      renderer.domElement.style.height = '100%'
+      renderer.domElement.style.position = 'absolute'
+      renderer.domElement.style.top = '0'
+      renderer.domElement.style.left = '0'
+      renderer.domElement.style.zIndex = '10' // Higher z-index to ensure visibility
+      renderer.domElement.style.outline = 'none' // Remove focus outline
+      renderer.domElement.style.background = '#0a0a0f' // Ensure background color
+      
+      // Clear the container before appending
+      if (containerRef.current) {
+        // Remove any existing canvas
+        const existingCanvas = containerRef.current.querySelector('canvas')
+        if (existingCanvas) {
+          containerRef.current.removeChild(existingCanvas)
         }
+        containerRef.current.appendChild(renderer.domElement)
+      }
+      rendererRef.current = renderer
+      
+      // Force initial render to ensure canvas is visible
+      renderer.render(scene, camera)
+      
+      console.log(`✅ View3D: Renderer created - canvas: ${renderer.domElement.width}x${renderer.domElement.height}, pixelRatio: ${renderer.getPixelRatio()}, style: ${renderer.domElement.style.display}`)
+
+      // Lighting - brighter for better visibility
+      // Lighting - very bright for maximum visibility
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0) // Maximum ambient
+      scene.add(ambientLight)
+
+      const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.2) // Increased intensity
+      directionalLight.position.set(1, 2, 1)
+      directionalLight.castShadow = false // Disable shadows for better performance
+      scene.add(directionalLight)
+      
+      // Add additional point light for better visibility
+      const pointLight = new THREE.PointLight(0xffffff, 0.8, 10)
+      pointLight.position.set(0.5, 1.5, 0.5)
+      scene.add(pointLight)
+      
+      // Add hemisphere light for even better visibility
+      const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
+      scene.add(hemisphereLight)
+
+      // Ground plane
+      const groundGeometry = new THREE.PlaneGeometry(1, 1)
+      const groundMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1a1a2e,
+        roughness: 0.9,
+        metalness: 0.1,
       })
+      const ground = new THREE.Mesh(groundGeometry, groundMaterial)
+      ground.rotation.x = -Math.PI / 2
+      ground.position.set(0.5, 0, 0.5)
+      ground.receiveShadow = true
+      scene.add(ground)
 
-      // Smoothly interpolate agent positions
-      const now = Date.now()
-      agentTargetsRef.current.forEach((target, agentId) => {
-        const mesh = agentsRef.current.get(agentId)
-        if (!mesh) return
-
-        const elapsed = now - target.startTime
-        const progress = Math.min(elapsed / target.duration, 1)
-        
-        // Ease-out cubic for smooth deceleration
-        const eased = 1 - Math.pow(1 - progress, 3)
-        
-        const currentX = target.startX + (target.x - target.startX) * eased
-        const currentZ = target.startZ + (target.z - target.startZ) * eased
-        
-        // Use same baseHeight as in createAgentMesh
-        mesh.position.set(currentX, 0.05, currentZ)
-        
-        // Remove completed interpolations
-        if (progress >= 1) {
-          agentTargetsRef.current.delete(agentId)
-        }
+      // Grid helper - larger and more visible to show coordinate system
+      const gridHelper = new THREE.GridHelper(1, 10, 0x00ff00, 0x008800) // Green grid for visibility
+      gridHelper.position.set(0.5, 0.01, 0.5)
+      scene.add(gridHelper)
+      
+      // Add coordinate markers at corners to show the map bounds
+      const cornerMarkers = [
+        [0, 0.05, 0], // SW
+        [1, 0.05, 0], // SE
+        [0, 0.05, 1], // NW
+        [1, 0.05, 1], // NE
+      ]
+      cornerMarkers.forEach((pos) => {
+        const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8)
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 })
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial)
+        marker.position.set(pos[0], pos[1], pos[2])
+        scene.add(marker)
       })
-
-      // Always render - even if no agents yet, show the ground and venues
-      try {
-        renderer.render(scene, camera)
-      } catch (error) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('⚠️ View3D: Render error:', error)
+      
+      // DEBUG: Add bright test objects to verify scene renders (larger, longer-lasting)
+      const testCubeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
+      const testCubeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
+      const testCube = new THREE.Mesh(testCubeGeometry, testCubeMaterial)
+      testCube.position.set(0.5, 0.15, 0.5)
+      scene.add(testCube)
+      console.log('🔴 View3D: RED TEST CUBE added at center (0.5, 0.15, 0.5) - should be visible!')
+      
+      // Also add a green sphere
+      const testSphereGeometry = new THREE.SphereGeometry(0.06, 16, 16)
+      const testSphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      const testSphere = new THREE.Mesh(testSphereGeometry, testSphereMaterial)
+      testSphere.position.set(0.6, 0.15, 0.5)
+      scene.add(testSphere)
+      console.log('🟢 View3D: GREEN TEST SPHERE added at (0.6, 0.15, 0.5)')
+      
+      // Remove test objects after 5 seconds (faster cleanup)
+      setTimeout(() => {
+        if (scene.children.includes(testCube)) {
+          scene.remove(testCube)
+          testCubeGeometry.dispose()
+          testCubeMaterial.dispose()
+          console.log('🔴 View3D: Test cube removed')
         }
-      }
-    }
-    // Start animation immediately
-    animate()
-    
-    console.log(`✅ View3D: Scene initialized - children: ${scene.children.length}, ground: ${scene.children.some(c => c.type === 'Mesh' && c.position.y === 0)}, grid: ${scene.children.some(c => c.type === 'GridHelper')}`)
+        if (scene.children.includes(testSphere)) {
+          scene.remove(testSphere)
+          testSphereGeometry.dispose()
+          testSphereMaterial.dispose()
+          console.log('🟢 View3D: Test sphere removed')
+        }
+      }, 5000) // Reduced from 10 seconds to 5 seconds
 
-    // Handle resize
-    const handleResize = () => {
-      if (!containerRef.current || !camera || !renderer) return
-      camera.aspect = containerRef.current.clientWidth / containerRef.current.clientHeight
-      camera.updateProjectionMatrix()
-      renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
-    }
-    window.addEventListener('resize', handleResize)
+      // Venues removed - they were confusing in the visualization
+      // Focus is on agents and their movement only
 
-    return () => {
-      // Cleanup: Remove event listeners
-      window.removeEventListener('resize', handleResize)
-      
-      // Cancel animation frame
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-        animationFrameRef.current = null
-      }
-      
-      // Dispose controls
-      if (controlsRef.current && controlsRef.current.dispose) {
-        controlsRef.current.dispose()
-        controlsRef.current = null
-      }
-      
-      // Clean up all agents and their trails
-      agentsRef.current.forEach((mesh, id) => {
-        scene.remove(mesh)
-        const trail = trailsRef.current.get(id)
-        if (trail) {
-          scene.remove(trail.line)
-          trail.line.geometry.dispose()
-          if (Array.isArray(trail.line.material)) {
-            trail.line.material.forEach(m => m.dispose())
-          } else {
-            trail.line.material.dispose()
+      // Orbit controls
+      import('three/examples/jsm/controls/OrbitControls.js').then((module) => {
+        const OrbitControls = module.OrbitControls
+        const controls = new OrbitControls(camera, renderer.domElement)
+        controls.enableDamping = true
+        controls.dampingFactor = 0.05
+        controls.enableZoom = true
+        controls.enablePan = true
+        controls.minDistance = 0.5
+        controls.maxDistance = 5
+        controls.target.set(0.5, 0, 0.5) // Look at ground level
+        controlsRef.current = controls
+      }).catch(() => {
+        // Fallback: basic mouse controls
+        let isDragging = false
+        let previousMousePosition = { x: 0, y: 0 }
+        
+        const onMouseDown = (e: MouseEvent) => {
+          isDragging = true
+          previousMousePosition = { x: e.clientX, y: e.clientY }
+        }
+        
+        const onMouseMove = (e: MouseEvent) => {
+          if (!isDragging) return
+          const deltaX = e.clientX - previousMousePosition.x
+          const deltaY = e.clientY - previousMousePosition.y
+          camera.position.x -= deltaX * 0.001
+          camera.position.y += deltaY * 0.001
+          camera.lookAt(0.5, 0.05, 0.5)
+          previousMousePosition = { x: e.clientX, y: e.clientY }
+        }
+        
+        const onMouseUp = () => {
+          isDragging = false
+        }
+        
+        const onWheel = (e: WheelEvent) => {
+          const zoomFactor = Math.max(0.3, Math.min(5, 1 + e.deltaY * 0.001))
+          camera.position.multiplyScalar(zoomFactor)
+          camera.lookAt(0.5, 0.05, 0.5)
+        }
+        
+        renderer.domElement.addEventListener('mousedown', onMouseDown)
+        renderer.domElement.addEventListener('mousemove', onMouseMove)
+        renderer.domElement.addEventListener('mouseup', onMouseUp)
+        renderer.domElement.addEventListener('wheel', onWheel)
+        
+        // Store cleanup function
+        controlsRef.current = {
+          update: () => {},
+          dispose: () => {
+            renderer.domElement.removeEventListener('mousedown', onMouseDown)
+            renderer.domElement.removeEventListener('mousemove', onMouseMove)
+            renderer.domElement.removeEventListener('mouseup', onMouseUp)
+            renderer.domElement.removeEventListener('wheel', onWheel)
           }
         }
       })
-      agentsRef.current.clear()
-      trailsRef.current.clear()
-      agentTargetsRef.current.clear()
-      
-      // Clean up incidents
-      incidentsRef.current.forEach((mesh) => {
-        scene.remove(mesh)
-        mesh.geometry.dispose()
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach(m => m.dispose())
-        } else {
-          mesh.material.dispose()
+
+      // Mark as initialized using both state and ref
+      setIsInitialized(true)
+
+      // Animation loop - ensure it always runs
+      const animate = () => {
+        if (!renderer || !camera || !scene) {
+          // Retry if not ready yet
+          animationFrameRef.current = requestAnimationFrame(animate)
+          return
         }
-      })
-      incidentsRef.current.clear()
-      
-      // Clean up venues (they use shared geometry/material, so just remove from scene)
-      venuesRef.current.forEach((mesh) => {
-        scene.remove(mesh)
-      })
-      venuesRef.current.clear()
-      
-      // Remove renderer from DOM
-      if (containerRef.current && renderer.domElement) {
+        
+        animationFrameRef.current = requestAnimationFrame(animate)
+        
+        if (controlsRef.current && controlsRef.current.update) {
+          controlsRef.current.update()
+        }
+
+        // Animate incidents (pulsing)
+        const time = Date.now() * 0.001
+        incidentsRef.current.forEach((mesh) => {
+          const scale = 1 + Math.sin(time * 3) * 0.15
+          mesh.scale.set(scale, scale, scale)
+          if ((mesh.material as THREE.MeshStandardMaterial).emissive) {
+            const intensity = 0.3 + Math.sin(time * 3) * 0.1
+            ;(mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = intensity
+          }
+        })
+
+        // Smoothly interpolate agent positions
+        const now = Date.now()
+        agentTargetsRef.current.forEach((target, agentId) => {
+          const mesh = agentsRef.current.get(agentId)
+          if (!mesh) return
+
+          const elapsed = now - target.startTime
+          const progress = Math.min(elapsed / target.duration, 1)
+          
+          // Ease-out cubic for smooth deceleration
+          const eased = 1 - Math.pow(1 - progress, 3)
+          
+          const currentX = target.startX + (target.x - target.startX) * eased
+          const currentZ = target.startZ + (target.z - target.startZ) * eased
+          
+          // Use same baseHeight as in createAgentMesh
+          mesh.position.set(currentX, 0.05, currentZ)
+          
+          // Remove completed interpolations
+          if (progress >= 1) {
+            agentTargetsRef.current.delete(agentId)
+          }
+        })
+
+        // Always render - even if no agents yet, show the ground and venues
         try {
-          containerRef.current.removeChild(renderer.domElement)
-        } catch (e) {
-          // Element may already be removed
+          renderer.render(scene, camera)
+        } catch (error) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error('⚠️ View3D: Render error:', error)
+          }
         }
       }
+      // Start animation immediately
+      animate()
       
-      // Dispose renderer (this also disposes the WebGL context)
-      renderer.dispose()
+      console.log(`✅ View3D: Scene initialized - children: ${scene.children.length}, ground: ${scene.children.some(c => c.type === 'Mesh' && c.position.y === 0)}, grid: ${scene.children.some(c => c.type === 'GridHelper')}`)
+
+      // Handle resize - store handler for cleanup
+      const handleResize = () => {
+        if (!containerRef.current || !camera || !renderer) return
+        camera.aspect = containerRef.current.clientWidth / containerRef.current.clientHeight
+        camera.updateProjectionMatrix()
+        renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+      }
+      window.addEventListener('resize', handleResize)
       
-      // Clear refs (but don't clear sceneRef if we're just re-initializing)
-      // sceneRef.current = null // Don't clear - let it persist
-      rendererRef.current = null
-      cameraRef.current = null
-      // Only reset refs on actual unmount - don't reset state to prevent re-initialization loop
-      isInitializedRef.current = false
-      // Don't reset isInitialized state here - it will be reset when component unmounts
+      // Store handleResize for cleanup
+      ;(window as any).__view3d_resize_handler = handleResize
+    }
+
+    // Start initialization
+    init()
+
+    // Cleanup function for useEffect
+    return () => {
+      // Cancel RAF if component unmounts before init completes
+      if (raf) cancelAnimationFrame(raf)
+      if (timeoutId) clearTimeout(timeoutId)
+      
+      // Full cleanup if initialized
+      if (isInitializedRef.current && sceneRef.current && rendererRef.current) {
+        const scene = sceneRef.current
+        const renderer = rendererRef.current
+        
+        // Remove event listeners
+        const resizeHandler = (window as any).__view3d_resize_handler
+        if (resizeHandler) {
+          window.removeEventListener('resize', resizeHandler)
+          delete (window as any).__view3d_resize_handler
+        }
+        
+        // Cancel animation frame
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current)
+          animationFrameRef.current = null
+        }
+        
+        // Dispose controls
+        if (controlsRef.current && controlsRef.current.dispose) {
+          controlsRef.current.dispose()
+          controlsRef.current = null
+        }
+        
+        // Clean up all agents and their trails
+        agentsRef.current.forEach((mesh, id) => {
+          scene.remove(mesh)
+          const trail = trailsRef.current.get(id)
+          if (trail) {
+            scene.remove(trail.line)
+            trail.line.geometry.dispose()
+            if (Array.isArray(trail.line.material)) {
+              trail.line.material.forEach((m: THREE.Material) => m.dispose())
+            } else {
+              trail.line.material.dispose()
+            }
+          }
+        })
+        agentsRef.current.clear()
+        trailsRef.current.clear()
+        agentTargetsRef.current.clear()
+        
+        // Clean up incidents
+        incidentsRef.current.forEach((mesh) => {
+          scene.remove(mesh)
+          mesh.geometry.dispose()
+          if (Array.isArray(mesh.material)) {
+            mesh.material.forEach((m: THREE.Material) => m.dispose())
+          } else {
+            mesh.material.dispose()
+          }
+        })
+        incidentsRef.current.clear()
+        
+        // Clean up venues (they use shared geometry/material, so just remove from scene)
+        venuesRef.current.forEach((mesh) => {
+          scene.remove(mesh)
+        })
+        venuesRef.current.clear()
+        
+        // Remove renderer from DOM
+        if (containerRef.current && renderer.domElement) {
+          try {
+            containerRef.current.removeChild(renderer.domElement)
+          } catch (e) {
+            // Element may already be removed
+          }
+        }
+        
+        // Dispose renderer (this also disposes the WebGL context)
+        renderer.dispose()
+        
+        // Clear refs - allow re-initialization on remount
+        rendererRef.current = null
+        cameraRef.current = null
+        isInitializedRef.current = false
+        initializationAttemptRef.current = false
+        setIsInitialized(false)
+      }
     }
     // Empty dependency array - this effect should only run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -887,10 +922,9 @@ export default function View3D({ state }: View3DProps) {
       ref={containerRef} 
       style={{
         position: 'absolute',
-        top: 0,
-        left: 0,
+        inset: 0, // ✅ Equivalent to top: 0, right: 0, bottom: 0, left: 0 - fills parent
         width: '100%',
-        height: '100%', // ✅ Uses parent's explicit height - fixes blank canvas issue
+        height: '100%',
         overflow: 'hidden',
         background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)',
       }}
