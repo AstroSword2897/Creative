@@ -116,7 +116,7 @@ class SpecialOlympicsModel(Model):
         
         # Metrics
         self.metrics = {
-            "safety_score": 100.0,
+            "safety_score": 80.0,  # ✅ FIXED: Capped at 80% maximum
             "avg_response_time": 0.0,
             "containment_rate": 1.0,
             "athlete_delay_minutes": 0.0,
