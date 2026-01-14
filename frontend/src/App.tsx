@@ -35,6 +35,8 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null)
   // AbortController for race condition prevention
   const abortRef = useRef<AbortController | null>(null)
+  // ✅ ENHANCED: Store current run ID for reconnection
+  const currentRunIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     // Load scenarios
