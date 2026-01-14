@@ -159,13 +159,13 @@ export default function View3D({ state }: View3DProps) {
 
     const mesh = new THREE.Mesh(geometry, material)
     
-    // Raise above ground for better visibility
-    const baseHeight = 0.05
+    // Raise above ground for better visibility (higher = more visible)
+    const baseHeight = 0.08 // Increased from 0.05 for better visibility
     mesh.position.set(x, baseHeight, z)
     
-    // Scale for visibility (very large scale to ensure visibility)
-    // Scale based on agent type - larger for better visibility
-    const scale = agent.type === 'bus' ? 12 : agent.type === 'athlete' ? 10 : 8
+    // Scale for visibility - larger scales ensure agents are clearly visible
+    // Scale based on agent type - athletes largest, buses large, others medium
+    const scale = agent.type === 'athlete' ? 15 : agent.type === 'bus' ? 12 : 10
     mesh.scale.set(scale, scale, scale)
     
     mesh.castShadow = false // Disable shadows for better performance
@@ -222,16 +222,15 @@ export default function View3D({ state }: View3DProps) {
       // scene.fog = new THREE.Fog(0x0a0a0f, 10, 50)
       sceneRef.current = scene
 
-      // Camera positioned to see the full 0-1 plane - top-down view for maximum visibility
-      // Position camera high above, looking straight down at the entire scene
+      // Camera positioned to see the full 0-1 plane - higher and farther back for visibility
       const camera = new THREE.PerspectiveCamera(
-        60,
+        75, // Wider FOV to see more of the scene
         width / height,
         0.1,
-        1000
+        10 // Closer far plane for better precision
       )
-      camera.position.set(0.5, 1, 1.5) // Better default position for visibility
-      camera.lookAt(0.5, 0, 0.5) // Look straight down at ground level
+      camera.position.set(0.5, 2.0, 2.0) // Move higher and farther back to see full scene
+      camera.lookAt(0.5, 0, 0.5) // Look at center of ground
       cameraRef.current = camera
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }) // Solid background
@@ -267,24 +266,14 @@ export default function View3D({ state }: View3DProps) {
       
       console.log(`✅ View3D: Renderer created - canvas: ${renderer.domElement.width}x${renderer.domElement.height}, pixelRatio: ${renderer.getPixelRatio()}, style: ${renderer.domElement.style.display}`)
 
-      // Lighting - brighter for better visibility
       // Lighting - very bright for maximum visibility
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.0) // Maximum ambient
+      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5) // Brighter ambient
       scene.add(ambientLight)
 
-      const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.2) // Increased intensity
-      directionalLight.position.set(1, 2, 1)
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0) // Clean white light
+      directionalLight.position.set(2, 5, 2) // Higher and more angled for better depth
       directionalLight.castShadow = false // Disable shadows for better performance
       scene.add(directionalLight)
-      
-      // Add additional point light for better visibility
-      const pointLight = new THREE.PointLight(0xffffff, 0.8, 10)
-      pointLight.position.set(0.5, 1.5, 0.5)
-      scene.add(pointLight)
-      
-      // Add hemisphere light for even better visibility
-      const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
-      scene.add(hemisphereLight)
 
       // Ground plane
       const groundGeometry = new THREE.PlaneGeometry(1, 1)
@@ -306,10 +295,10 @@ export default function View3D({ state }: View3DProps) {
       
       // Add coordinate markers at corners to show the map bounds
       const cornerMarkers = [
-        [0, 0.05, 0], // SW
-        [1, 0.05, 0], // SE
-        [0, 0.05, 1], // NW
-        [1, 0.05, 1], // NE
+        [0, 0.08, 0], // SW
+        [1, 0.08, 0], // SE
+        [0, 0.08, 1], // NW
+        [1, 0.08, 1], // NE
       ]
       cornerMarkers.forEach((pos) => {
         const markerGeometry = new THREE.SphereGeometry(0.02, 8, 8)
@@ -320,20 +309,20 @@ export default function View3D({ state }: View3DProps) {
       })
       
       // DEBUG: Add bright test objects to verify scene renders (larger, longer-lasting)
-      const testCubeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
+      const testCubeGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.15) // Larger for visibility
       const testCubeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
       const testCube = new THREE.Mesh(testCubeGeometry, testCubeMaterial)
-      testCube.position.set(0.5, 0.15, 0.5)
+      testCube.position.set(0.5, 0.2, 0.5) // Higher for visibility
       scene.add(testCube)
-      console.log('🔴 View3D: RED TEST CUBE added at center (0.5, 0.15, 0.5) - should be visible!')
+      console.log('🔴 View3D: RED TEST CUBE added at center (0.5, 0.2, 0.5) - should be visible!')
       
       // Also add a green sphere
-      const testSphereGeometry = new THREE.SphereGeometry(0.06, 16, 16)
+      const testSphereGeometry = new THREE.SphereGeometry(0.08, 16, 16) // Larger for visibility
       const testSphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
       const testSphere = new THREE.Mesh(testSphereGeometry, testSphereMaterial)
-      testSphere.position.set(0.6, 0.15, 0.5)
+      testSphere.position.set(0.6, 0.2, 0.5) // Higher for visibility
       scene.add(testSphere)
-      console.log('🟢 View3D: GREEN TEST SPHERE added at (0.6, 0.15, 0.5)')
+      console.log('🟢 View3D: GREEN TEST SPHERE added at (0.6, 0.2, 0.5)')
       
       // Remove test objects after 5 seconds (faster cleanup)
       setTimeout(() => {
@@ -364,7 +353,7 @@ export default function View3D({ state }: View3DProps) {
         controls.enablePan = true
         controls.minDistance = 0.5
         controls.maxDistance = 5
-        controls.target.set(0.5, 0, 0.5) // Look at ground level
+        controls.target.set(0.5, 0.08, 0.5) // Look at agent height level
         controlsRef.current = controls
       }).catch(() => {
         // Fallback: basic mouse controls
@@ -382,7 +371,7 @@ export default function View3D({ state }: View3DProps) {
           const deltaY = e.clientY - previousMousePosition.y
           camera.position.x -= deltaX * 0.001
           camera.position.y += deltaY * 0.001
-          camera.lookAt(0.5, 0.05, 0.5)
+          camera.lookAt(0.5, 0.08, 0.5)
           previousMousePosition = { x: e.clientX, y: e.clientY }
         }
         
@@ -393,7 +382,7 @@ export default function View3D({ state }: View3DProps) {
         const onWheel = (e: WheelEvent) => {
           const zoomFactor = Math.max(0.3, Math.min(5, 1 + e.deltaY * 0.001))
           camera.position.multiplyScalar(zoomFactor)
-          camera.lookAt(0.5, 0.05, 0.5)
+          camera.lookAt(0.5, 0.08, 0.5)
         }
         
         renderer.domElement.addEventListener('mousedown', onMouseDown)
@@ -457,7 +446,7 @@ export default function View3D({ state }: View3DProps) {
           const currentZ = target.startZ + (target.z - target.startZ) * eased
           
           // Use same baseHeight as in createAgentMesh
-          mesh.position.set(currentX, 0.05, currentZ)
+          mesh.position.set(currentX, 0.08, currentZ)
           
           // Remove completed interpolations
           if (progress >= 1) {
@@ -792,7 +781,7 @@ export default function View3D({ state }: View3DProps) {
           })
         } else {
           // Very small movement, set directly (use same baseHeight)
-          existing.position.set(x, 0.05, z)
+          existing.position.set(x, 0.08, z)
         }
         updated++
 
