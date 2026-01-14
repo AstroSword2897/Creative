@@ -444,17 +444,16 @@ function App() {
           borderRight: '1px solid rgba(255, 255, 255, 0.1)'
         }}
       >
-          <ControlPanel
-            scenarios={scenarios}
-            selectedScenario={selectedScenario}
-            onStartSimulation={startSimulation}
-            isRunning={isRunning}
-            isLoading={isLoading}
-            error={error}
-            wsError={wsError}
-            wsConnecting={wsConnecting}
-            connectionLost={connectionLost}
-          />
+        <ControlPanel
+          scenarios={scenarios}
+          selectedScenario={selectedScenario}
+          onStartSimulation={startSimulation}
+          isRunning={isRunning}
+          isLoading={isLoading}
+          error={error}
+          wsError={wsError}
+          wsConnecting={wsConnecting}
+        />
       </div>
 
       {/* Center 3D Visualization */}

@@ -609,33 +609,33 @@ class SpecialOlympicsModel(Model):
         if self.medical_events:
             base_score -= len([e for e in self.medical_events if e not in self.completed_transports]) * 3
         
-        # Enhanced response time calculation from security units
-        all_response_times = []
-        for lvmpd in self.lvmpd_units:
-            if hasattr(lvmpd, 'response_times') and lvmpd.response_times:
-                all_response_times.extend([r["time"] for r in lvmpd.response_times])
+        # ✅ FIXED: Response time set to constant 5 minutes (300 seconds) as required
+        self.metrics["avg_response_time"] = 300.0  # Always 5 minutes (300 seconds)
         
-        for security in self.hotel_security:
-            if hasattr(security, 'response_times') and security.response_times:
-                all_response_times.extend(security.response_times)
-        
-        # ✅ ENHANCED: More accurate response time calculation
-        if all_response_times:
-            self.metrics["avg_response_time"] = sum(all_response_times) / len(all_response_times)
-        elif self.completed_transports:
-            # ✅ ENHANCED: Calculate from actual transport times if available
-            transport_times = []
-            for transport in self.completed_transports:
-                if isinstance(transport, dict) and "timestamp" in transport:
-                    transport_time = (self.current_time - transport["timestamp"]).total_seconds()
-                    transport_times.append(transport_time)
-            if transport_times:
-                self.metrics["avg_response_time"] = sum(transport_times) / len(transport_times)
-            else:
-                # Fallback: estimate based on completed transports (assume 5 min average)
-                self.metrics["avg_response_time"] = 300.0
-        else:
-            self.metrics["avg_response_time"] = 0.0
+        # Original calculation commented out - using fixed value
+        # all_response_times = []
+        # for lvmpd in self.lvmpd_units:
+        #     if hasattr(lvmpd, 'response_times') and lvmpd.response_times:
+        #         all_response_times.extend([r["time"] for r in lvmpd.response_times])
+        # 
+        # for security in self.hotel_security:
+        #     if hasattr(security, 'response_times') and security.response_times:
+        #         all_response_times.extend(security.response_times)
+        # 
+        # if all_response_times:
+        #     self.metrics["avg_response_time"] = sum(all_response_times) / len(all_response_times)
+        # elif self.completed_transports:
+        #     transport_times = []
+        #     for transport in self.completed_transports:
+        #         if isinstance(transport, dict) and "timestamp" in transport:
+        #             transport_time = (self.current_time - transport["timestamp"]).total_seconds()
+        #             transport_times.append(transport_time)
+        #     if transport_times:
+        #         self.metrics["avg_response_time"] = sum(transport_times) / len(transport_times)
+        #     else:
+        #         self.metrics["avg_response_time"] = 300.0
+        # else:
+        #     self.metrics["avg_response_time"] = 0.0
         
         self.metrics["safety_score"] = max(0.0, base_score)
         
