@@ -6,6 +6,7 @@ Coordinates agents, events, and metrics.
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 import random
+import asyncio
 from mesa import Model
 from mesa.space import ContinuousSpace
 
@@ -119,6 +120,11 @@ class SpecialOlympicsModel(Model):
             "accessibility_coverage": 1.0,
             "medical_events_count": 0,
             "incidents_resolved": 0,
+            # ✅ ENHANCED: Additional real-time metrics
+            "avg_venue_density": 0.0,
+            "max_venue_density": 0.0,
+            "athletes_per_hour": 0.0,
+            "avg_incident_age_seconds": 0.0,
         }
         
         # Access control
@@ -292,15 +298,21 @@ class SpecialOlympicsModel(Model):
         pass
     
     def step(self):
-        """Advance simulation by one step."""
+        """Advance simulation by one step with enhanced dynamics."""
         # Advance time
         self.current_time += self.step_duration
         
         # Process scheduled events
         self._process_scheduled_events()
         
+        # ✅ ENHANCED: Check for dynamic event generation (crowd-based incidents)
+        self._check_dynamic_events()
+        
         # Step all agents
         self.schedule.step()
+        
+        # ✅ ENHANCED: Update crowd dynamics and congestion effects
+        self._update_crowd_dynamics()
         
         # Update enhanced systems
         self.alert_manager.update_all_alerts()
@@ -627,6 +639,126 @@ class SpecialOlympicsModel(Model):
             security_coverage = 1.0 - avg_threat_level  # Higher coverage = lower threat
         
         self.metrics["security_coverage"] = max(0.0, min(1.0, security_coverage))
+        
+        # ✅ ENHANCED: Real-time crowd density metrics
+        total_agents = len(self.athletes) + len(self.volunteers) + len(self.hotel_security)
+        if total_agents > 0:
+            # Calculate average crowd density at key venues
+            venue_densities = []
+            for venue_key, venue_data in self.venues.items():
+                venue_loc = (venue_data["lat"], venue_data["lon"])
+                nearby = self.get_agents_near(venue_loc, 0.02)
+                density = len(nearby) / max(1, venue_data.get("capacity", 100))
+                venue_densities.append(density)
+            
+            if venue_densities:
+                self.metrics["avg_venue_density"] = sum(venue_densities) / len(venue_densities)
+                self.metrics["max_venue_density"] = max(venue_densities)
+            else:
+                self.metrics["avg_venue_density"] = 0.0
+                self.metrics["max_venue_density"] = 0.0
+        
+        # ✅ ENHANCED: Throughput metrics (athletes processed per hour)
+        step_hours = self.step_duration.total_seconds() / 3600.0
+        if step_hours > 0:
+            athletes_at_venues = sum(1 for a in self.athletes if a.status == "at_venue")
+            self.metrics["athletes_per_hour"] = athletes_at_venues / (step_hours * max(1, (self.current_time - self.start_time).total_seconds() / 3600.0))
+        
+        # ✅ ENHANCED: Response efficiency (time from incident to resolution)
+        if self.active_incidents:
+            avg_age = sum(
+                (self.current_time - inc.get("timestamp", self.current_time)).total_seconds()
+                for inc in self.active_incidents
+                if isinstance(inc.get("timestamp"), datetime)
+            ) / len(self.active_incidents)
+            self.metrics["avg_incident_age_seconds"] = avg_age
+        else:
+            self.metrics["avg_incident_age_seconds"] = 0.0
+    
+    def _check_dynamic_events(self):
+        """✅ ENHANCED: Generate dynamic events based on crowd density and conditions."""
+        # Check for crowd-based incidents (high density areas)
+        for venue_key, venue_data in self.venues.items():
+            venue_loc = (venue_data["lat"], venue_data["lon"])
+            nearby_athletes = self.get_agents_near(venue_loc, 0.02, agent_type=Athlete)
+            
+            # High crowd density can trigger incidents
+            if len(nearby_athletes) > venue_data.get("capacity", 100) * 0.8:
+                # 5% chance per step of crowd-related incident
+                if random.random() < 0.05 * (self.step_duration.total_seconds() / 60.0):
+                    self._trigger_crowd_incident(venue_key, venue_loc)
+        
+        # Weather-based dynamic events
+        weather = self.weather
+        if weather.get("temp_C", 20) > 38:
+            # Extreme heat increases medical event probability
+            for athlete in self.athletes:
+                if athlete.status in ["traveling", "at_venue"] and not athlete.medical_event:
+                    heat_risk = (weather["temp_C"] - 38) * 0.01
+                    if random.random() < heat_risk * (self.step_duration.total_seconds() / 3600.0):
+                        athlete.medical_event = True
+                        athlete.status = "emergency"
+                        self.trigger_medical_event(athlete)
+    
+    def _trigger_crowd_incident(self, venue_key: str, location: Tuple[float, float]):
+        """Trigger a crowd-related incident."""
+        incident_types = ["crowd_congestion", "access_control_issue", "lost_person"]
+        incident_type = random.choice(incident_types)
+        
+        incident = {
+            "id": f"crowd_{len(self.active_incidents)}",
+            "type": incident_type,
+            "location": location,
+            "venue": venue_key,
+            "reported_by": "crowd_monitoring",
+            "timestamp": self.current_time,
+            "severity": "medium",
+        }
+        self.active_incidents.append(incident)
+        
+        # Dispatch security if available
+        self._dispatch_lvmpd(incident)
+        
+        # Create alert
+        if hasattr(self, 'alert_manager'):
+            asyncio.create_task(self.alert_manager.register_alert(
+                alert_id=incident["id"],
+                alert_type=incident_type,
+                location=location,
+                timestamp=self.current_time,
+                metadata={"venue": venue_key, "severity": "medium"}
+            ))
+    
+    def _update_crowd_dynamics(self):
+        """✅ ENHANCED: Update crowd dynamics and apply congestion effects to agents."""
+        # Calculate congestion at key locations
+        congestion_map = {}
+        
+        for venue_key, venue_data in self.venues.items():
+            venue_loc = (venue_data["lat"], venue_data["lon"])
+            nearby = self.get_agents_near(venue_loc, 0.02)
+            capacity = venue_data.get("capacity", 100)
+            congestion = min(1.0, len(nearby) / capacity)
+            congestion_map[venue_key] = congestion
+        
+        # Apply congestion effects to athletes (slow movement in crowded areas)
+        for athlete in self.athletes:
+            if athlete.status == "traveling" and athlete.current_location:
+                # Find nearest venue
+                nearest_venue = None
+                min_dist = float('inf')
+                for venue_key, venue_data in self.venues.items():
+                    venue_loc = (venue_data["lat"], venue_data["lon"])
+                    dist = self._distance(athlete.current_location, venue_loc)
+                    if dist < min_dist and dist < 0.02:
+                        min_dist = dist
+                        nearest_venue = venue_key
+                
+                if nearest_venue and nearest_venue in congestion_map:
+                    congestion = congestion_map[nearest_venue]
+                    # Reduce speed based on congestion (0-30% reduction)
+                    speed_multiplier = 1.0 - (congestion * 0.3)
+                    athlete.walking_speed = athlete._get_speed() * speed_multiplier
     
     def _distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """Calculate distance between two points."""

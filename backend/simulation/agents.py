@@ -53,10 +53,14 @@ class Athlete(Agent):
         return base * random.uniform(0.85, 1.15)
     
     def step(self):
-        """Agent behavior on each simulation step."""
+        """✅ ENHANCED: Agent behavior with crowd awareness and interactions."""
         # Check for medical event based on risk and weather
         if not self.medical_event:
             self._check_medical_risk()
+        
+        # ✅ ENHANCED: Check for nearby athletes who need help
+        if self.status == "at_venue" and not self.medical_event:
+            self._check_nearby_assistance()
         
         # Handle movement
         if self.status == "traveling":
@@ -68,6 +72,23 @@ class Athlete(Agent):
         if self.current_location:
             self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
             self.model.space.move_agent(self, self.pos)
+    
+    def _check_nearby_assistance(self):
+        """✅ ENHANCED: Check if nearby athletes need help and assist if possible."""
+        if not self.current_location:
+            return
+        
+        # Look for nearby athletes in emergency
+        nearby = self.model.get_agents_near(self.current_location, 0.01, agent_type=Athlete)
+        for other_athlete in nearby:
+            if other_athlete.medical_event and not other_athlete.escorted:
+                # 30% chance of helping (athletes can help each other)
+                if random.random() < 0.3:
+                    other_athlete.escorted = True
+                    # Stay near the athlete in need
+                    self.status = "assisting"
+                    self.target_location = other_athlete.current_location
+                    break
     
     def _check_medical_risk(self):
         """Check if athlete experiences medical event based on risk factors."""
@@ -103,7 +124,7 @@ class Athlete(Agent):
             self.path_index = 0
     
     def _move(self):
-        """Move along planned path."""
+        """✅ ENHANCED: Move along planned path with congestion awareness."""
         if not self.current_path or self.path_index >= len(self.current_path):
             # Arrived
             self.status = "at_venue"
@@ -119,7 +140,17 @@ class Athlete(Agent):
         next_point = self.current_path[self.path_index]
         distance = self._distance(self.current_location, next_point)
         step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
-        step_distance = self.walking_speed * step_seconds
+        
+        # ✅ ENHANCED: Check for congestion ahead and adjust speed
+        effective_speed = self.walking_speed
+        if self.current_location:
+            # Check for nearby agents (congestion)
+            nearby = self.model.get_agents_near(self.current_location, 0.005)
+            if len(nearby) > 5:  # More than 5 agents nearby = congestion
+                congestion_factor = min(0.5, len(nearby) / 20.0)  # Up to 50% speed reduction
+                effective_speed *= (1.0 - congestion_factor)
+        
+        step_distance = effective_speed * step_seconds
         
         if distance <= step_distance:
             self.current_location = next_point
@@ -165,11 +196,13 @@ class Volunteer(Agent):
         self.current_assignment = None
         
     def step(self):
-        """Volunteer behavior on each step."""
+        """✅ ENHANCED: Volunteer behavior with coordination and crowd management."""
         if self.status == "responding":
             self._respond_to_incident()
         elif self.status == "patrolling":
             self._patrol()
+            # ✅ ENHANCED: Check for nearby incidents while patrolling
+            self._check_nearby_incidents()
         elif self.status == "assisting":
             self._assist_athlete()
         
@@ -177,6 +210,33 @@ class Volunteer(Agent):
         if self.current_location:
             self.pos = self.model._normalize_coords(self.current_location[0], self.current_location[1])
             self.model.space.move_agent(self, self.pos)
+    
+    def _check_nearby_incidents(self):
+        """✅ ENHANCED: Check for nearby incidents and coordinate with other volunteers."""
+        if not self.current_location or not self.model.active_incidents:
+            return
+        
+        # Check for incidents within response radius
+        for incident in self.model.active_incidents:
+            incident_loc = incident.get("location")
+            if incident_loc:
+                distance = self._distance(self.current_location, incident_loc)
+                if distance < 0.02:  # Within response radius
+                    # Check if other volunteers are already responding
+                    responding_count = sum(
+                        1 for v in self.model.volunteers
+                        if v.status == "responding" and v.current_assignment and
+                        v.current_assignment.get("incident_id") == incident.get("id")
+                    )
+                    
+                    # If no one responding or need backup, respond
+                    if responding_count == 0 or (responding_count < 2 and incident.get("severity") == "high"):
+                        self.status = "responding"
+                        self.current_assignment = {
+                            "incident": incident,
+                            "incident_id": incident.get("id"),
+                        }
+                        break
     
     def _patrol(self):
         """Patrol assigned area."""
