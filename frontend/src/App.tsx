@@ -124,6 +124,9 @@ function App() {
       setIsLoading(false)
       setWsConnecting(true)
       
+      // ✅ ENHANCED: Store run_id for reconnection
+      currentRunIdRef.current = data.run_id
+      
       // Connect WebSocket immediately (no delay)
       console.log('🔌 Connecting WebSocket for run_id:', data.run_id)
       connectWebSocket(data.run_id)
