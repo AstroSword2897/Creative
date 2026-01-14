@@ -159,7 +159,6 @@ function computeStatus(
   isLoading: boolean,
   wsConnecting: boolean,
   isRunning: boolean,
-  connectionLost?: boolean
 ): StatusPanelProps | null {
   // Priority: errors > loading > running
   if (error) {
@@ -240,7 +239,7 @@ export default function ControlPanel({
     onStartSimulation(scenarioId)
   }
 
-  const status = computeStatus(error, wsError, isLoading, wsConnecting, isRunning, connectionLost)
+  const status = computeStatus(error, wsError, isLoading, wsConnecting, isRunning)
 
   return (
     <div 
