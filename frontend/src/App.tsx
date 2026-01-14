@@ -251,7 +251,26 @@ function App() {
         ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data)
-            console.log('WebSocket message received:', message.type)
+            
+            // ✅ ENHANCED: Handle ping messages (keepalive)
+            if (message.type === 'ping') {
+              if (DEBUG_MODE) {
+                console.log('🏓 WebSocket ping received, connection alive')
+              }
+              // Optionally send pong back (not required, but good practice)
+              try {
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'pong', step: message.step }))
+                }
+              } catch (e) {
+                // Ignore pong send errors
+              }
+              return
+            }
+            
+            if (DEBUG_MODE) {
+              console.log('WebSocket message received:', message.type)
+            }
             
             if (message.error) {
               console.error('WebSocket error message:', message.error)
@@ -263,13 +282,15 @@ function App() {
             
             // Handle completed message separately (doesn't have agents structure)
             if (message.type === 'completed') {
-              console.log('✅ Simulation completed')
+              if (DEBUG_MODE) {
+                console.log('✅ Simulation completed')
+              }
               setIsRunning(false)
               setIsLoading(false)
               setWsConnecting(false)
+              setConnectionLost(false)
               // Keep the final state visible
-              if (message.data && message.data.metrics) {
-                // Update metrics if provided
+              if (message.data && message.data.metrics && DEBUG_MODE) {
                 console.log('Final metrics:', message.data.metrics)
               }
               return
@@ -383,44 +404,66 @@ function App() {
         }
         
         ws.onclose = (event) => {
-          console.log('WebSocket closed:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean,
-          })
+          if (DEBUG_MODE) {
+            console.log('WebSocket closed:', {
+              code: event.code,
+              reason: event.reason,
+              wasClean: event.wasClean,
+            })
+          }
           wsRef.current = null
           
           // ✅ ENHANCED: Auto-reconnect on unexpected disconnect if simulation is still running
-          if (!event.wasClean && event.code !== 1000 && isRunning && selectedScenario && currentRunIdRef.current) {
-            console.log('🔄 Attempting to reconnect WebSocket...')
+          // Only reconnect for unexpected disconnects (not clean closes or normal shutdowns)
+          const shouldReconnect = (
+            !event.wasClean && 
+            event.code !== 1000 && // Not a normal closure
+            event.code !== 1001 && // Not "going away"
+            isRunning && 
+            selectedScenario && 
+            currentRunIdRef.current
+          )
+          
+          if (shouldReconnect) {
+            if (DEBUG_MODE) {
+              console.log('🔄 Attempting to reconnect WebSocket...')
+            }
             setConnectionLost(true)
             setWsConnecting(true)
-            // Retry connection after a short delay
+            // ✅ ENHANCED: Use exponential backoff for reconnection (1s, 2s, 4s, max 8s)
+            const reconnectDelay = Math.min(1000 * Math.pow(2, Math.min(attempt, 3)), 8000)
             setTimeout(() => {
-              if (isRunning && selectedScenario && currentRunIdRef.current) {
-                connectWebSocket(currentRunIdRef.current, 0)
+              // Double-check state hasn't changed
+              if (isRunning && selectedScenario && currentRunIdRef.current && !wsRef.current) {
+                connectWebSocket(currentRunIdRef.current, attempt + 1)
+              } else {
+                setWsConnecting(false)
+                setConnectionLost(false)
               }
-            }, 1000)
+            }, reconnectDelay)
             return
           }
           
-          // Always update state - React setters are idempotent
+          // Clean close or intentional shutdown
           setIsRunning(false)
           setIsLoading(false)
+          setWsConnecting(false)
           
-          // DON'T clear simulationState - keep the last state visible
-          // Only show error if it wasn't a clean close
-          if (!event.wasClean && event.code !== 1000) {
+          // Only show error for unexpected disconnects
+          if (!event.wasClean && event.code !== 1000 && event.code !== 1001) {
             setConnectionLost(true)
             if (event.code === 1006) {
               setError('WebSocket connection closed unexpectedly. Attempting to reconnect...')
             } else {
               setError(`WebSocket closed with code ${event.code}. Attempting to reconnect...`)
             }
-          } else if (event.wasClean) {
-            // Clean close - simulation completed
-            console.log('✅ WebSocket closed cleanly - simulation completed')
+          } else {
+            // Clean close - simulation completed or intentional shutdown
+            if (DEBUG_MODE) {
+              console.log('✅ WebSocket closed cleanly')
+            }
             setConnectionLost(false)
+            setError(null) // Clear any previous errors
           }
         }
         

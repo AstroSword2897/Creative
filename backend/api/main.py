@@ -392,12 +392,28 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
     async def send_safe(ws: WebSocket, message: dict):
         """Safely send message with backpressure handling."""
         try:
+            # ✅ ENHANCED: Check connection state before sending
+            if hasattr(ws, 'client_state'):
+                # WebSocketState.CONNECTED = 1, CONNECTING = 0, DISCONNECTED = 2
+                if ws.client_state != 1:  # Not connected
+                    return False
+            
             await ws.send_json(message)
             return True
         except WebSocketDisconnect:
+            print(f"⚠️ WebSocket disconnected while sending message")
+            return False
+        except RuntimeError as e:
+            # Connection already closed
+            if "closed" in str(e).lower() or "disconnect" in str(e).lower():
+                print(f"⚠️ WebSocket connection closed: {e}")
+                return False
+            print(f"⚠️ Runtime error sending message: {e}")
             return False
         except Exception as e:
             print(f"⚠️ Error sending message: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # Register this WebSocket connection
@@ -555,15 +571,21 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                 
-                # ✅ ENHANCED: Ensure WebSocket connection is still alive
-                try:
-                    # Check connection state - WebSocketState.CONNECTED = 1
-                    if hasattr(websocket, 'client_state') and websocket.client_state != 1:
-                        print(f"⚠️ WebSocket disconnected for run {run_id}, stopping stream")
+                # ✅ ENHANCED: Periodic connection health check (every 50 steps)
+                if step_count % 50 == 0:
+                    try:
+                        # Send a ping-like message to check connection
+                        ping_success = await send_safe(websocket, {
+                            "type": "ping",
+                            "step": step_count,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        if not ping_success:
+                            print(f"⚠️ WebSocket ping failed for run {run_id}, stopping stream")
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Error during connection health check for run {run_id}: {e}")
                         break
-                except Exception as e:
-                    print(f"⚠️ Error checking WebSocket state for run {run_id}: {e}")
-                    break
                     
             except WebSocketDisconnect:
                 print(f"WebSocket disconnected during streaming for run {run_id}")
