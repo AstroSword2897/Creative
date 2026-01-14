@@ -726,7 +726,7 @@ export default function View3D({ state }: View3DProps) {
           console.log('✨ View3D: Created agent mesh', {
             id: agent.id,
             type: agent.type,
-            position: [x, 0.05, z],
+            position: [x, 0.08, z],
             scale: mesh.scale.toArray(),
             meshInScene: scene.children.includes(mesh),
             materialColor: mesh.material instanceof THREE.MeshStandardMaterial ? mesh.material.color.getHexString() : 'N/A',
