@@ -406,6 +406,16 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
     ws_connections[run_id].add(websocket)
     print(f"📡 Registered WebSocket for run {run_id} (total connections: {len(ws_connections[run_id])})")
     
+    # ✅ ENHANCED: Send initial connection confirmation
+    try:
+        await send_safe(websocket, {
+            "type": "connected",
+            "run_id": run_id,
+            "message": "WebSocket connected successfully"
+        })
+    except Exception as e:
+        print(f"⚠️ Failed to send initial connection message: {e}")
+    
     # Subscribe to alert updates
     async def send_alert_update(message: dict):
         """Send alert update to this WebSocket."""
