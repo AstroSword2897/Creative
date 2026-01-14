@@ -14,17 +14,23 @@ interface ControlPanelProps {
 
 // StatusPanel component for reusable status displays
 interface StatusPanelProps {
-  type: 'error' | 'loading' | 'running'
+  type: 'error' | 'warning' | 'loading' | 'running'
   message: string
   details?: string
 }
 
 function StatusPanel({ type, message, details }: StatusPanelProps) {
+  // ✅ ENHANCED: Color-coded status styles
   const styles = {
     error: {
       background: 'rgba(231, 76, 60, 0.15)',
       border: '1px solid var(--color-alert-red)',
       color: 'var(--color-alert-red)',
+    },
+    warning: {
+      background: 'rgba(255, 193, 7, 0.15)',
+      border: '1px solid #FFC107',
+      color: '#FFC107',
     },
     loading: {
       background: 'rgba(255, 212, 48, 0.15)',
@@ -146,31 +152,45 @@ function ScenarioButton({ scenario, isSelected, isDisabled, isLoading, onSelect 
   )
 }
 
-// Compute single status from multiple state props
+// ✅ ENHANCED: Compute single status with color-coded messages
 function computeStatus(
   error: string | null,
   wsError: string | null,
   isLoading: boolean,
   wsConnecting: boolean,
-  isRunning: boolean
+  isRunning: boolean,
+  connectionLost?: boolean
 ): StatusPanelProps | null {
   // Priority: errors > loading > running
   if (error) {
-    return { type: 'error', message: `Error: ${error}` }
+    // ✅ ENHANCED: Color-code error messages
+    const isWarning = error.toLowerCase().includes('reconnect') || error.toLowerCase().includes('attempting')
+    return { 
+      type: isWarning ? 'warning' : 'error', 
+      message: isWarning ? `⚠️ ${error}` : `❌ Error: ${error}` 
+    }
   }
   
   if (wsError) {
     return {
       type: 'error',
-      message: 'WebSocket Connection Failed',
+      message: '❌ WebSocket Connection Failed',
       details: wsError || 'Unable to connect to simulation stream. Check backend or network.'
+    }
+  }
+  
+  if (connectionLost) {
+    return {
+      type: 'warning',
+      message: '⚠️ Connection Lost',
+      details: 'Attempting to reconnect... Visualization shows last known state.'
     }
   }
   
   if (isLoading) {
     return {
       type: 'loading',
-      message: 'Starting simulation...',
+      message: '⏳ Starting simulation...',
       details: wsConnecting ? 'Connecting to simulation stream...' : 'Initializing simulation...'
     }
   }
@@ -178,7 +198,7 @@ function computeStatus(
   if (wsConnecting) {
     return {
       type: 'loading',
-      message: 'Connecting to simulation...',
+      message: '⏳ Connecting to simulation...',
       details: 'Establishing WebSocket connection...'
     }
   }
@@ -186,7 +206,7 @@ function computeStatus(
   if (isRunning) {
     return {
       type: 'running',
-      message: 'Simulation Running',
+      message: '✅ Simulation Running',
       details: 'Watch agents move in the 3D view as the model processes events'
     }
   }
@@ -203,6 +223,7 @@ export default function ControlPanel({
   error = null,
   wsError = null,
   wsConnecting = false,
+  connectionLost = false,
 }: ControlPanelProps) {
   const handleScenarioClick = (scenarioId: string) => {
     // ✅ ENHANCED: Allow clicking even if simulation is running (switches scenarios)
@@ -219,7 +240,7 @@ export default function ControlPanel({
     onStartSimulation(scenarioId)
   }
 
-  const status = computeStatus(error, wsError, isLoading, wsConnecting, isRunning)
+  const status = computeStatus(error, wsError, isLoading, wsConnecting, isRunning, connectionLost)
 
   return (
     <div 

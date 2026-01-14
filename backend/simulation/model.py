@@ -887,64 +887,67 @@ class SpecialOlympicsModel(Model):
                 "hotspots": hotspots_serialized,
             }
         
+        # ✅ ENHANCED: Validate agent counts for consistency
+        total_athletes = len(self.athletes)
+        total_volunteers = len(self.volunteers)
+        total_security = len(self.hotel_security)
+        total_lvmpd = len(self.lvmpd_units)
+        total_amr = len(self.amr_units)
+        total_buses = len(self.buses)
+        
+        # ✅ ENHANCED: Ensure all agents have valid locations before sending
+        def validate_agent(agent, agent_type: str):
+            """Validate agent has valid location and return serialized data."""
+            if not hasattr(agent, 'pos') and not (hasattr(agent, 'current_location') and agent.current_location):
+                return None
+            loc = get_normalized_location(agent)
+            if not loc or len(loc) != 2:
+                return None
+            # Validate coordinates are numbers
+            try:
+                float(loc[0])
+                float(loc[1])
+            except (ValueError, TypeError):
+                return None
+            return {
+                "id": agent.unique_id,
+                "type": agent_type,
+                "location": loc,
+                "status": getattr(agent, 'status', 'unknown'),
+            }
+        
         return {
             "time": self.current_time.isoformat(),
             "agents": {
                 "athletes": [
-                    {
-                        "id": a.unique_id,
-                        "type": "athlete",
-                        "location": get_normalized_location(a),  # ✅ Send normalized coordinates
-                        "status": a.status,
-                        "medical_event": a.medical_event,
-                    }
-                    for a in self.athletes if hasattr(a, 'pos') or (hasattr(a, 'current_location') and a.current_location)
+                    agent_data
+                    for a in self.athletes
+                    if (agent_data := validate_agent(a, "athlete"))
                 ],
                 "volunteers": [
-                    {
-                        "id": v.unique_id,
-                        "type": "volunteer",
-                        "location": get_normalized_location(v),  # ✅ Send normalized coordinates
-                        "status": v.status,
-                    }
-                    for v in self.volunteers if hasattr(v, 'pos') or (hasattr(v, 'current_location') and v.current_location)
+                    agent_data
+                    for v in self.volunteers
+                    if (agent_data := validate_agent(v, "volunteer"))
                 ],
                 "security": [
-                    {
-                        "id": s.unique_id,
-                        "type": "hotel_security",
-                        "location": get_normalized_location(s),  # ✅ Send normalized coordinates
-                        "status": s.status,
-                        "hotel_id": s.hotel_id,
-                    }
-                    for s in self.hotel_security if hasattr(s, 'pos') or (hasattr(s, 'current_location') and s.current_location)
+                    {**agent_data, "hotel_id": getattr(s, 'hotel_id', None)}
+                    for s in self.hotel_security
+                    if (agent_data := validate_agent(s, "hotel_security"))
                 ],
                 "lvmpd": [
-                    {
-                        "id": u.unique_id,
-                        "type": "lvmpd",
-                        "location": get_normalized_location(u),  # ✅ Send normalized coordinates
-                        "status": u.status,
-                    }
-                    for u in self.lvmpd_units if hasattr(u, 'pos') or (hasattr(u, 'current_location') and u.current_location)
+                    agent_data
+                    for u in self.lvmpd_units
+                    if (agent_data := validate_agent(u, "lvmpd"))
                 ],
                 "amr": [
-                    {
-                        "id": u.unique_id,
-                        "type": "amr",
-                        "location": get_normalized_location(u),  # ✅ Send normalized coordinates
-                        "status": u.status,
-                    }
-                    for u in self.amr_units if hasattr(u, 'pos') or (hasattr(u, 'current_location') and u.current_location)
+                    agent_data
+                    for u in self.amr_units
+                    if (agent_data := validate_agent(u, "amr"))
                 ],
                 "buses": [
-                    {
-                        "id": b.unique_id,
-                        "type": "bus",
-                        "location": get_normalized_location(b),  # ✅ Send normalized coordinates
-                        "status": b.status,
-                    }
-                    for b in self.buses if hasattr(b, 'pos') or (hasattr(b, 'current_location') and b.current_location)
+                    agent_data
+                    for b in self.buses
+                    if (agent_data := validate_agent(b, "bus"))
                 ],
             },
             "incidents": [

@@ -6,6 +6,10 @@ import { SimulationState } from './types'
 
 import { Scenario } from './types'
 
+// ✅ ENHANCED: Debug mode flag (can be controlled via environment variable)
+const DEBUG_MODE = process.env.NODE_ENV === 'development' || 
+                   (typeof window !== 'undefined' && window.location.search.includes('debug=true'))
+
 // WebSocket base URL helper
 const getWsBaseUrl = (): string => {
   if (typeof window === 'undefined') return 'ws://localhost:3333'
@@ -155,7 +159,8 @@ function App() {
     }
 
     const MAX_ATTEMPTS = 5  // ✅ ENHANCED: Increased retries for better reliability
-    const RETRY_DELAY = 200  // ✅ ENHANCED: Slightly longer delay for more reliable reconnection
+    // ✅ ENHANCED: Exponential backoff for retries (200ms, 400ms, 800ms, 1600ms, 3200ms)
+    const RETRY_DELAY = Math.min(200 * Math.pow(2, attempt), 3000)  // Cap at 3 seconds
 
     // Verify backend run exists before connecting WebSocket
     const verifyAndConnect = async () => {
@@ -169,8 +174,11 @@ function App() {
         
         if (!verifyRes.ok) {
           if (attempt < MAX_ATTEMPTS - 1) {
-            console.log(`⏳ Run not ready, retrying in ${RETRY_DELAY}ms...`)
-            setTimeout(() => connectWebSocket(runId, attempt + 1), RETRY_DELAY)
+            const backoffDelay = Math.min(200 * Math.pow(2, attempt), 3000)
+            if (DEBUG_MODE) {
+              console.log(`⏳ Run not ready, retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`)
+            }
+            setTimeout(() => connectWebSocket(runId, attempt + 1), backoffDelay)
             return
           }
           
@@ -233,26 +241,64 @@ function App() {
             }
             
             if (message.type === 'state' || message.type === 'update') {
-              const agentCounts = message.data.agents ? {
-                athletes: message.data.agents.athletes?.length || 0,
-                volunteers: message.data.agents.volunteers?.length || 0,
-                security: message.data.agents.security?.length || 0,
-                lvmpd: message.data.agents.lvmpd?.length || 0,
-                amr: message.data.agents.amr?.length || 0,
-                buses: message.data.agents.buses?.length || 0,
-              } : {}
+              // ✅ ENHANCED: Validate message structure and sanitize data
+              if (!message.data || !message.data.agents || typeof message.data.agents !== 'object') {
+                console.warn('Invalid message shape, skipping:', message)
+                return
+              }
+              
+              // ✅ ENHANCED: Validate and sanitize agent coordinates
+              const sanitizeAgent = (agent: any) => {
+                if (!agent || !agent.location) return null
+                const [lat, lon] = Array.isArray(agent.location) ? agent.location : [agent.location[0], agent.location[1]]
+                // Validate coordinates are numbers and within reasonable bounds
+                if (typeof lat !== 'number' || typeof lon !== 'number' || 
+                    isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) {
+                  return null
+                }
+                // Clamp coordinates to reasonable bounds (Las Vegas area)
+                const validLat = Math.max(36.0, Math.min(36.2, lat))
+                const validLon = Math.max(-115.3, Math.min(-115.1, lon))
+                return { ...agent, location: [validLat, validLon] }
+              }
+              
+              // Sanitize all agent arrays
+              const sanitizedData = {
+                ...message.data,
+                agents: {
+                  athletes: (message.data.agents.athletes || []).map(sanitizeAgent).filter(Boolean),
+                  volunteers: (message.data.agents.volunteers || []).map(sanitizeAgent).filter(Boolean),
+                  security: (message.data.agents.security || []).map(sanitizeAgent).filter(Boolean),
+                  lvmpd: (message.data.agents.lvmpd || []).map(sanitizeAgent).filter(Boolean),
+                  amr: (message.data.agents.amr || []).map(sanitizeAgent).filter(Boolean),
+                  buses: (message.data.agents.buses || []).map(sanitizeAgent).filter(Boolean),
+                }
+              }
+              
+              const agentCounts = {
+                athletes: sanitizedData.agents.athletes.length,
+                volunteers: sanitizedData.agents.volunteers.length,
+                security: sanitizedData.agents.security.length,
+                lvmpd: sanitizedData.agents.lvmpd.length,
+                amr: sanitizedData.agents.amr.length,
+                buses: sanitizedData.agents.buses.length,
+              }
               
               const totalAgents = Object.values(agentCounts).reduce((sum, count) => sum + count, 0)
               
-              console.log('✅ Setting simulation state:', {
-                type: message.type,
-                agentKeys: Object.keys(message.data.agents || {}),
-                totalAgents,
-                agentCounts,
-                hasTime: !!message.data.time,
-                time: message.data.time,
-              })
-              setSimulationState(message.data)
+              // ✅ ENHANCED: Debug logging only in debug mode
+              if (DEBUG_MODE) {
+                console.log('✅ Setting simulation state:', {
+                  type: message.type,
+                  agentKeys: Object.keys(sanitizedData.agents || {}),
+                  totalAgents,
+                  agentCounts,
+                  hasTime: !!sanitizedData.time,
+                  time: sanitizedData.time,
+                })
+              }
+              
+              setSimulationState(sanitizedData)
             } else if (message.type === 'completed') {
               console.log('✅ Simulation completed')
               setIsRunning(false)
@@ -276,10 +322,13 @@ function App() {
           console.error('❌ WebSocket error:', error)
           console.error('WebSocket readyState:', ws.readyState)
           
-          // Retry connection if not exceeded max attempts
+          // ✅ ENHANCED: Retry with exponential backoff
           if (attempt < MAX_ATTEMPTS - 1) {
-            console.log(`⏳ WebSocket error, retrying in ${RETRY_DELAY}ms...`)
-            setTimeout(() => connectWebSocket(runId, attempt + 1), RETRY_DELAY)
+            const backoffDelay = Math.min(200 * Math.pow(2, attempt), 3000)
+            if (DEBUG_MODE) {
+              console.log(`⏳ WebSocket error, retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`)
+            }
+            setTimeout(() => connectWebSocket(runId, attempt + 1), backoffDelay)
             return
           }
           
@@ -335,10 +384,13 @@ function App() {
         }
         
       } catch (err: any) {
-        // Don't retry on non-network errors
+        // ✅ ENHANCED: Retry with exponential backoff (don't retry on non-network errors)
         if (attempt < MAX_ATTEMPTS - 1 && err.name !== 'AbortError') {
-          console.log(`⏳ Connection error, retrying in ${RETRY_DELAY}ms...`)
-          setTimeout(() => connectWebSocket(runId, attempt + 1), RETRY_DELAY)
+          const backoffDelay = Math.min(200 * Math.pow(2, attempt), 3000)
+          if (DEBUG_MODE) {
+            console.log(`⏳ Connection error, retrying in ${backoffDelay}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`)
+          }
+          setTimeout(() => connectWebSocket(runId, attempt + 1), backoffDelay)
           return
         }
         
@@ -365,16 +417,17 @@ function App() {
           borderRight: '1px solid rgba(255, 255, 255, 0.1)'
         }}
       >
-        <ControlPanel
-          scenarios={scenarios}
-          selectedScenario={selectedScenario}
-          onStartSimulation={startSimulation}
-          isRunning={isRunning}
-          isLoading={isLoading}
-          error={error}
-          wsError={wsError}
-          wsConnecting={wsConnecting}
-        />
+          <ControlPanel
+            scenarios={scenarios}
+            selectedScenario={selectedScenario}
+            onStartSimulation={startSimulation}
+            isRunning={isRunning}
+            isLoading={isLoading}
+            error={error}
+            wsError={wsError}
+            wsConnecting={wsConnecting}
+            connectionLost={connectionLost}
+          />
       </div>
 
       {/* Center 3D Visualization */}
