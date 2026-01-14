@@ -214,7 +214,6 @@ export default function ControlPanel({
   error = null,
   wsError = null,
   wsConnecting = false,
-  connectionLost = false,
 }: ControlPanelProps) {
   const handleScenarioClick = (scenarioId: string) => {
     // ✅ ENHANCED: Allow clicking even if simulation is running (switches scenarios)
