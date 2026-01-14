@@ -538,9 +538,10 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
                     })
                     break
                 
-                # Dynamic sleep based on step duration and processing time
+                # ✅ ENHANCED: Much faster updates - minimal delay for real-time metrics
                 step_elapsed = (datetime.now() - step_start).total_seconds()
-                sleep_time = max(0, target_step_interval - step_elapsed)
+                # Use very short sleep (10ms max) to allow other tasks but keep updates fast
+                sleep_time = max(0, min(0.01, target_step_interval - step_elapsed))
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                     

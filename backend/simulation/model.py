@@ -887,34 +887,36 @@ class SpecialOlympicsModel(Model):
                 "hotspots": hotspots_serialized,
             }
         
-        # ✅ ENHANCED: Validate agent counts for consistency
-        total_athletes = len(self.athletes)
-        total_volunteers = len(self.volunteers)
-        total_security = len(self.hotel_security)
-        total_lvmpd = len(self.lvmpd_units)
-        total_amr = len(self.amr_units)
-        total_buses = len(self.buses)
-        
-        # ✅ ENHANCED: Ensure all agents have valid locations before sending
+        # ✅ ENHANCED: Validate agent counts for consistency and ensure all agents have valid locations
         def validate_agent(agent, agent_type: str):
             """Validate agent has valid location and return serialized data."""
+            if not agent:
+                return None
             if not hasattr(agent, 'pos') and not (hasattr(agent, 'current_location') and agent.current_location):
                 return None
             loc = get_normalized_location(agent)
             if not loc or len(loc) != 2:
                 return None
-            # Validate coordinates are numbers
+            # Validate coordinates are numbers and within bounds
             try:
-                float(loc[0])
-                float(loc[1])
+                lat, lon = float(loc[0]), float(loc[1])
+                if not (0 <= lat <= 1 and 0 <= lon <= 1):
+                    return None
             except (ValueError, TypeError):
                 return None
-            return {
+            # Build agent data based on type
+            agent_data = {
                 "id": agent.unique_id,
                 "type": agent_type,
                 "location": loc,
                 "status": getattr(agent, 'status', 'unknown'),
             }
+            # Add type-specific fields
+            if agent_type == "athlete":
+                agent_data["medical_event"] = getattr(agent, 'medical_event', False)
+            elif agent_type == "hotel_security":
+                agent_data["hotel_id"] = getattr(agent, 'hotel_id', None)
+            return agent_data
         
         return {
             "time": self.current_time.isoformat(),

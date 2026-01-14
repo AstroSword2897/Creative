@@ -44,7 +44,9 @@ function App() {
 
   useEffect(() => {
     // Load scenarios
-    console.log('Loading scenarios...')
+    if (DEBUG_MODE) {
+      console.log('Loading scenarios...')
+    }
     fetch('/api/scenarios')
       .then(res => {
         console.log('Scenarios API response status:', res.status)
@@ -76,7 +78,17 @@ function App() {
 
   const startSimulation = async (scenarioId: string) => {
     try {
-      console.log('🚀 Starting simulation for scenario:', scenarioId, isRunning ? '(switching from running sim)' : '(new simulation)')
+      // ✅ ENHANCED: Prevent duplicate starts - check if already starting this scenario
+      if (isLoading && selectedScenario === scenarioId) {
+        if (DEBUG_MODE) {
+          console.log('⏸️ Already starting this scenario, skipping duplicate start')
+        }
+        return
+      }
+      
+      if (DEBUG_MODE) {
+        console.log('🚀 Starting simulation for scenario:', scenarioId, isRunning ? '(switching from running sim)' : '(new simulation)')
+      }
       
       // ✅ ENHANCED: Abort any in-flight requests and close existing connections
       abortRef.current?.abort()
@@ -84,7 +96,9 @@ function App() {
       
       // Close existing WebSocket immediately to allow switching scenarios
       if (wsRef.current) {
-        console.log('Closing existing WebSocket to switch scenario')
+        if (DEBUG_MODE) {
+          console.log('Closing existing WebSocket to switch scenario')
+        }
         wsRef.current.close()
         wsRef.current = null
       }
@@ -118,10 +132,13 @@ function App() {
       }
       
       const data = await response.json()
-      console.log('✅ Simulation started:', data)
       
       if (!data.run_id) {
         throw new Error('No run_id returned from API')
+      }
+      
+      if (DEBUG_MODE) {
+        console.log('✅ Simulation started:', data.run_id)
       }
       
       setIsRunning(true)
@@ -132,7 +149,9 @@ function App() {
       currentRunIdRef.current = data.run_id
       
       // Connect WebSocket immediately (no delay)
-      console.log('🔌 Connecting WebSocket for run_id:', data.run_id)
+      if (DEBUG_MODE) {
+        console.log('🔌 Connecting WebSocket for run_id:', data.run_id)
+      }
       connectWebSocket(data.run_id)
     } catch (error: any) {
       // Don't set error if it was an abort
@@ -159,14 +178,16 @@ function App() {
     }
 
     const MAX_ATTEMPTS = 5  // ✅ ENHANCED: Increased retries for better reliability
-    // ✅ ENHANCED: Exponential backoff for retries (200ms, 400ms, 800ms, 1600ms, 3200ms)
-    const RETRY_DELAY = Math.min(200 * Math.pow(2, attempt), 3000)  // Cap at 3 seconds
+    // ✅ ENHANCED: Exponential backoff for retries (200ms, 400ms, 800ms, 1600ms, 3000ms)
+    // Note: RETRY_DELAY calculated inline below for each retry
 
     // Verify backend run exists before connecting WebSocket
     const verifyAndConnect = async () => {
       try {
         // First verify the run exists (with shorter timeout)
-        console.log(`🔍 Verifying run exists (attempt ${attempt + 1}/${MAX_ATTEMPTS}):`, runId)
+        if (DEBUG_MODE) {
+          console.log(`🔍 Verifying run exists (attempt ${attempt + 1}/${MAX_ATTEMPTS}):`, runId)
+        }
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 1000) // 1 second timeout
         const verifyRes = await fetch(`/api/runs/${runId}/state`, { signal: controller.signal })
@@ -190,17 +211,23 @@ function App() {
           return
         }
         
-        console.log('✅ Backend run exists, connecting WebSocket...')
+        if (DEBUG_MODE) {
+          console.log('✅ Backend run exists, connecting WebSocket...')
+        }
         
         // Now connect WebSocket immediately
         const wsUrl = `${getWsBaseUrl()}/ws/runs/${runId}`
-        console.log('Connecting to WebSocket:', wsUrl)
+        if (DEBUG_MODE) {
+          console.log('Connecting to WebSocket:', wsUrl)
+        }
         
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
         
         ws.onopen = () => {
-          console.log('✅ WebSocket connected successfully')
+          if (DEBUG_MODE) {
+            console.log('✅ WebSocket connected successfully')
+          }
           setError(null) // Clear any previous errors
           setWsError(null)
           setWsConnecting(false)

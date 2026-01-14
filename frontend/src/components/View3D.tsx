@@ -278,14 +278,19 @@ export default function View3D({ state }: View3DProps) {
       
       console.log(`✅ View3D: Renderer created - canvas: ${renderer.domElement.width}x${renderer.domElement.height}, pixelRatio: ${renderer.getPixelRatio()}, style: ${renderer.domElement.style.display}`)
 
-      // Lighting - very bright for maximum visibility
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5) // Brighter ambient
+      // ✅ ENHANCED: Very bright lighting for maximum agent visibility
+      const ambientLight = new THREE.AmbientLight(0xffffff, 2.0) // Much brighter ambient
       scene.add(ambientLight)
 
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0) // Clean white light
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5) // Brighter directional
       directionalLight.position.set(2, 5, 2) // Higher and more angled for better depth
       directionalLight.castShadow = false // Disable shadows for better performance
       scene.add(directionalLight)
+      
+      // ✅ ENHANCED: Add additional light from above for better visibility
+      const topLight = new THREE.DirectionalLight(0xffffff, 0.8)
+      topLight.position.set(0.5, 10, 0.5)
+      scene.add(topLight)
 
       // Ground plane
       const groundGeometry = new THREE.PlaneGeometry(1, 1)
@@ -617,18 +622,12 @@ export default function View3D({ state }: View3DProps) {
     }
 
     // Prevent duplicate processing of the same state
+    // ✅ ENHANCED: Prevent duplicate processing more efficiently
     const currentTime = state.time || ''
     if (lastProcessedTimeRef.current === currentTime) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⚠️ View3D: Agent update skipped - duplicate time:', currentTime)
-      }
-      return // Skip duplicate updates
+      return // Skip duplicate updates silently
     }
     lastProcessedTimeRef.current = currentTime
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🎨 View3D: Processing agents for time:', currentTime)
-    }
 
     const scene = sceneRef.current
     
@@ -642,23 +641,7 @@ export default function View3D({ state }: View3DProps) {
       ...(state.agents?.buses || []),
     ].filter(agent => agent && agent.location) // ✅ Filter out agents without locations
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 View3D: State check', {
-        hasState: !!state,
-        hasAgents: !!state?.agents,
-        agentKeys: state?.agents ? Object.keys(state.agents) : [],
-        allAgentsLength: allAgents.length,
-        athletes: state?.agents?.athletes?.length || 0,
-        volunteers: state?.agents?.volunteers?.length || 0,
-        security: state?.agents?.security?.length || 0,
-        lvmpd: state?.agents?.lvmpd?.length || 0,
-        amr: state?.agents?.amr?.length || 0,
-        buses: state?.agents?.buses?.length || 0,
-        sceneChildren: scene.children.length,
-        agentsRefSize: agentsRef.current.size,
-        time: state.time,
-      })
-    }
+    // ✅ ENHANCED: Reduced logging - only log when actually needed (errors or significant changes)
 
     // Track which agents exist in current state
     const seen = new Set<number>()
@@ -694,23 +677,13 @@ export default function View3D({ state }: View3DProps) {
     allAgents.forEach((agent) => {
       if (!agent.location) {
         skipped++
-        if (process.env.NODE_ENV === 'development' && skipped <= 3) {
-          console.warn('⚠️ View3D: Agent missing location', { id: agent.id, type: agent.type })
-        }
-        return
+        return // Skip silently
       }
 
       const normalizedPos = getNormalizedPos(agent.location)
       if (!normalizedPos) {
         skipped++
-        if (process.env.NODE_ENV === 'development' && skipped <= 3) {
-          console.warn('⚠️ View3D: Failed to normalize position', { 
-            id: agent.id, 
-            type: agent.type,
-            location: agent.location 
-          })
-        }
-        return
+        return // Skip silently
       }
 
       const [x, z] = normalizedPos
@@ -937,27 +910,55 @@ export default function View3D({ state }: View3DProps) {
         background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)',
       }}
     >
-      {/* Info overlay - pointer-events-none so it doesn't block canvas */}
-      <div className="absolute top-4 left-4 z-10 text-white text-sm bg-black/60 px-4 py-3 rounded-lg backdrop-blur-md border border-white/10 pointer-events-none">
-        <div className="font-semibold mb-1 text-base">3D Live Simulation</div>
-        <div className="text-xs opacity-80 mb-2">
+      {/* ✅ ENHANCED: Info overlay with more detailed agent type breakdown */}
+      <div className="absolute top-4 left-4 z-10 text-white text-sm bg-black/80 px-4 py-3 rounded-lg backdrop-blur-md border border-white/15 pointer-events-none" style={{ minWidth: '280px' }}>
+        <div className="font-semibold mb-2 text-base">3D Live Simulation</div>
+        <div className="text-xs opacity-80 mb-3">
           Click & drag to rotate • Scroll to zoom • Right-click to pan
         </div>
-        {isInitialized && (
-          <div className="text-xs mt-2 text-green-400">
-            ✓ Scene: {agentsRef.current.size} agents rendered
-          </div>
+        {isInitialized && state && (
+          <>
+            <div className="text-xs mb-2 text-green-400 font-semibold">
+              ✓ {agentsRef.current.size} agents rendered
+            </div>
+            <div className="text-xs opacity-90 space-y-1" style={{ fontSize: '10px', lineHeight: '1.4' }}>
+              <div className="flex justify-between">
+                <span style={{ color: '#F4C430' }}>Athletes:</span>
+                <span className="font-mono">{state.agents?.athletes?.length || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: '#2ECC71' }}>Volunteers:</span>
+                <span className="font-mono">{state.agents?.volunteers?.length || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: '#00F5D4' }}>Security:</span>
+                <span className="font-mono">{state.agents?.security?.length || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: '#0077FF' }}>LVMPD:</span>
+                <span className="font-mono">{state.agents?.lvmpd?.length || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: '#E74C3C' }}>AMR:</span>
+                <span className="font-mono">{state.agents?.amr?.length || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: '#6366F1' }}>Buses:</span>
+                <span className="font-mono">{state.agents?.buses?.length || 0}</span>
+              </div>
+              {state.incidents && state.incidents.length > 0 && (
+                <div className="flex justify-between mt-2 pt-2 border-t border-white/20">
+                  <span style={{ color: '#F1948A' }}>Active Incidents:</span>
+                  <span className="font-mono font-semibold">{state.incidents.length}</span>
+                </div>
+              )}
+            </div>
+          </>
         )}
         {!state && isInitialized && (
           <div className="text-xs mt-2 opacity-90 flex items-center gap-2" style={{ color: '#FFD700' }}>
             <span className="animate-pulse">●</span>
             <span>Click a scenario button to start</span>
-          </div>
-        )}
-        {state && (
-          <div className="text-xs mt-2 opacity-90 flex items-center gap-2" style={{ color: '#2ECC71' }}>
-            <span className="animate-pulse">●</span>
-            <span>{Object.values(state.agents || {}).flat().length} agents in state</span>
           </div>
         )}
       </div>
