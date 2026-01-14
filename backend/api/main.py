@@ -182,6 +182,8 @@ async def get_scenario(scenario_id: str):
 @app.post("/api/scenarios/{scenario_id}/run", tags=["runs"])
 async def start_run(scenario_id: str):
     """Start a simulation run - uses pre-initialized if available."""
+    print(f"🚀 Starting run for scenario: {scenario_id}")
+    
     # Check if we have a pre-initialized simulation ready
     if scenario_id in preinitialized_runs:
         preinit = preinitialized_runs[scenario_id]
