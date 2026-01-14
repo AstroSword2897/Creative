@@ -82,6 +82,9 @@ interface ScenarioButtonProps {
 }
 
 function ScenarioButton({ scenario, isSelected, isDisabled, isLoading, onSelect }: ScenarioButtonProps) {
+  // ✅ Run on contact: start on pointer contact (touch/mouse down) rather than waiting for click.
+  // Also dedupe because some browsers emit both pointerdown and click.
+  const startedRef = React.useRef(false)
   const [interactionState, setInteractionState] = React.useState<'idle' | 'hover' | 'focus'>('idle')
 
   const baseStyles: React.CSSProperties = {
@@ -111,10 +114,29 @@ function ScenarioButton({ scenario, isSelected, isDisabled, isLoading, onSelect 
     <button
       type="button"
       data-scenario-id={scenario.id}
-      disabled={isDisabled || isLoading}
+      // ✅ Never disable; user wants scenario to run immediately on contact.
+      disabled={false}
       className="panel-elevated text-left animate-fade-in"
       style={baseStyles}
-      onClick={onSelect}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        if (startedRef.current) return
+        startedRef.current = true
+        onSelect()
+        window.setTimeout(() => {
+          startedRef.current = false
+        }, 250)
+      }}
+      onClick={(e) => {
+        // Fallback for environments where pointer events are not available.
+        e.preventDefault()
+        if (startedRef.current) return
+        startedRef.current = true
+        onSelect()
+        window.setTimeout(() => {
+          startedRef.current = false
+        }, 250)
+      }}
       onMouseEnter={() => !isDisabled && !isLoading && setInteractionState('hover')}
       onMouseLeave={() => setInteractionState('idle')}
       onFocus={() => !isDisabled && !isLoading && setInteractionState('focus')}
