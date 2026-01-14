@@ -111,6 +111,9 @@ class SpecialOlympicsModel(Model):
         self.medical_events = []
         self.completed_transports = []
         
+        # ✅ ENHANCED: Track incident resolution times for better metrics
+        self.incident_resolution_times = []
+        
         # Metrics
         self.metrics = {
             "safety_score": 100.0,
