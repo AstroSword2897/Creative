@@ -149,8 +149,8 @@ function App() {
       wsRef.current = null
     }
 
-    const MAX_ATTEMPTS = 3  // Reduced from 5 for faster boot
-    const RETRY_DELAY = 100  // Reduced from 200ms for faster boot
+    const MAX_ATTEMPTS = 5  // ✅ ENHANCED: Increased retries for better reliability
+    const RETRY_DELAY = 200  // ✅ ENHANCED: Slightly longer delay for more reliable reconnection
 
     // Verify backend run exists before connecting WebSocket
     const verifyAndConnect = async () => {
@@ -295,6 +295,20 @@ function App() {
           })
           wsRef.current = null
           
+          // ✅ ENHANCED: Auto-reconnect on unexpected disconnect if simulation is still running
+          if (!event.wasClean && event.code !== 1000 && isRunning && selectedScenario && currentRunIdRef.current) {
+            console.log('🔄 Attempting to reconnect WebSocket...')
+            setConnectionLost(true)
+            setWsConnecting(true)
+            // Retry connection after a short delay
+            setTimeout(() => {
+              if (isRunning && selectedScenario && currentRunIdRef.current) {
+                connectWebSocket(currentRunIdRef.current, 0)
+              }
+            }, 1000)
+            return
+          }
+          
           // Always update state - React setters are idempotent
           setIsRunning(false)
           setIsLoading(false)
@@ -304,9 +318,9 @@ function App() {
           if (!event.wasClean && event.code !== 1000) {
             setConnectionLost(true)
             if (event.code === 1006) {
-              setError('WebSocket connection closed unexpectedly. Visualization shows last known state.')
+              setError('WebSocket connection closed unexpectedly. Attempting to reconnect...')
             } else {
-              setError(`WebSocket closed with code ${event.code}. Visualization shows last known state.`)
+              setError(`WebSocket closed with code ${event.code}. Attempting to reconnect...`)
             }
           } else if (event.wasClean) {
             // Clean close - simulation completed

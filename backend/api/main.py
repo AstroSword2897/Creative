@@ -350,16 +350,17 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
     print(f"🔌 WebSocket connection attempt for run_id: {run_id}")
     print(f"📋 Current active runs: {list(active_runs.keys())}")
     
-    # Wait briefly for run to be registered (handles race condition)
+    # ✅ ENHANCED: Reduced wait time for faster connection (handles race condition)
     import asyncio
-    max_wait = 2.0  # Wait up to 2 seconds
-    wait_interval = 0.1
+    max_wait = 1.0  # Reduced from 2.0 to 1.0 seconds for faster connection
+    wait_interval = 0.05  # Reduced from 0.1 to 0.05 for faster checks
     waited = 0.0
     
     while run_id not in active_runs and waited < max_wait:
         await asyncio.sleep(wait_interval)
         waited += wait_interval
-        print(f"⏳ Waiting for run {run_id} to be registered... ({waited:.1f}s)")
+        if waited % 0.2 < wait_interval:  # Only log every 0.2 seconds to reduce noise
+            print(f"⏳ Waiting for run {run_id} to be registered... ({waited:.1f}s)")
     
     try:
         await websocket.accept()
@@ -460,9 +461,9 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
             while run["status"] == "running":
                 try:
                     if alert_manager:
-                        await alert_manager.update_all_alerts()
-                        await alert_manager.expire_alerts()
-                    await asyncio.sleep(5)  # Update every 5 seconds
+                    await alert_manager.update_all_alerts()
+                    await alert_manager.expire_alerts()
+                await asyncio.sleep(2)  # ✅ ENHANCED: Update every 2 seconds instead of 5 for faster metrics
                 except Exception as e:
                     print(f"Error in alert update task: {e}")
                     import traceback
