@@ -24,6 +24,12 @@ export interface Metrics {
   incidents_resolved: number
 }
 
+export interface Scenario {
+  id: string
+  name: string
+  description?: string
+}
+
 export interface SimulationState {
   time: string
   agents: {

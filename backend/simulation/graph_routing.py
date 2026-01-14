@@ -1,25 +1,30 @@
 """
 Graph-based routing system with pathfinding algorithms.
 Supports road networks, accessibility constraints, and obstacle avoidance.
+Enhanced with configurable thresholds, better accessibility handling, and optimizations.
 """
 
 from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
+from dataclasses import dataclass
 import heapq
 import math
 
 
+@dataclass
 class GraphNode:
     """Represents a node in the routing graph."""
+    node_id: str
+    location: Tuple[float, float]
+    node_type: str = "venue"
+    neighbors: List[Tuple[str, float]] = None  # (node_id, distance)
+    accessible: bool = True  # Wheelchair accessible
+    capacity: float = float('inf')  # Max capacity (for traffic)
+    current_load: float = 0  # Current traffic load
     
-    def __init__(self, node_id: str, location: Tuple[float, float], node_type: str = "venue"):
-        self.node_id = node_id
-        self.location = location
-        self.node_type = node_type  # venue, intersection, bus_stop, etc.
-        self.neighbors: List[Tuple[str, float]] = []  # (node_id, distance)
-        self.accessible = True  # Wheelchair accessible
-        self.capacity = float('inf')  # Max capacity (for traffic)
-        self.current_load = 0  # Current traffic load
+    def __post_init__(self):
+        if self.neighbors is None:
+            self.neighbors = []
     
     def add_neighbor(self, neighbor_id: str, distance: float):
         """Add a neighbor node."""
@@ -32,11 +37,18 @@ class GraphNode:
 
 
 class RoutingGraph:
-    """Graph-based routing system."""
+    """Graph-based routing system with enhanced features."""
     
-    def __init__(self, venues: Dict[str, Dict]):
+    def __init__(
+        self, 
+        venues: Dict[str, Dict],
+        nearest_node_threshold: float = 0.1,
+        connections_per_node: int = 5
+    ):
         self.nodes: Dict[str, GraphNode] = {}
         self.venues = venues
+        self.nearest_node_threshold = nearest_node_threshold
+        self.connections_per_node = connections_per_node
         self._build_graph()
     
     def _build_graph(self):
@@ -53,10 +65,7 @@ class RoutingGraph:
             )
             
             # Set accessibility based on venue type
-            if node_type in ["hotel", "venue", "hospital"]:
-                node.accessible = True
-            else:
-                node.accessible = True  # Default accessible
+            node.accessible = venue_data.get("accessible", True)
             
             self.nodes[venue_id] = node
         
@@ -77,17 +86,28 @@ class RoutingGraph:
             ]
             distances.sort()
             
-            # Connect to 3-5 nearest neighbors (creates realistic network)
-            num_connections = min(5, len(distances))
+            # Connect to configured number of nearest neighbors
+            num_connections = min(self.connections_per_node, len(distances))
             for dist, neighbor_id in distances[:num_connections]:
                 node1.add_neighbor(neighbor_id, dist)
                 # Make bidirectional
                 if neighbor_id in self.nodes:
                     self.nodes[neighbor_id].add_neighbor(node1.node_id, dist)
     
-    def add_node(self, node_id: str, location: Tuple[float, float], node_type: str = "intersection"):
+    def add_node(
+        self, 
+        node_id: str, 
+        location: Tuple[float, float], 
+        node_type: str = "intersection",
+        accessible: bool = True
+    ) -> GraphNode:
         """Add a custom node to the graph."""
-        node = GraphNode(node_id, location, node_type)
+        node = GraphNode(
+            node_id=node_id,
+            location=location,
+            node_type=node_type,
+            accessible=accessible
+        )
         self.nodes[node_id] = node
         return node
     
@@ -99,9 +119,9 @@ class RoutingGraph:
         algorithm: str = "astar"
     ) -> List[Tuple[float, float]]:
         """Find path from start to end using specified algorithm."""
-        # Find nearest nodes
-        start_node_id = self._nearest_node(start)
-        end_node_id = self._nearest_node(end)
+        # Find nearest nodes (with fallback to nearest accessible)
+        start_node_id = self._nearest_node(start, accessibility_required)
+        end_node_id = self._nearest_node(end, accessibility_required)
         
         if not start_node_id or not end_node_id:
             # Fallback to direct path
@@ -137,7 +157,7 @@ class RoutingGraph:
         end_id: str,
         accessibility_required: bool = False
     ) -> List[str]:
-        """A* pathfinding algorithm."""
+        """A* pathfinding algorithm with enhanced heuristic."""
         if start_id not in self.nodes or end_id not in self.nodes:
             return []
         
@@ -178,10 +198,15 @@ class RoutingGraph:
                     continue
                 
                 # Calculate g_score (cost from start)
-                tentative_g = g_scores[current_id] + distance * current_node.get_cost(distance)
+                base_cost = distance * current_node.get_cost(distance)
+                tentative_g = g_scores[current_id] + base_cost
                 
-                # Calculate h_score (heuristic - straight line to end)
+                # Enhanced heuristic: weighted Euclidean + load consideration
                 h_score = self._distance(neighbor_node.location, end_location)
+                # Incorporate load into heuristic for better pathfinding
+                if neighbor_node.current_load > 0:
+                    load_penalty = neighbor_node.current_load / max(1, neighbor_node.capacity)
+                    h_score *= (1 + load_penalty * 0.2)
                 
                 # Calculate f_score
                 f_score = tentative_g + h_score
@@ -235,7 +260,8 @@ class RoutingGraph:
                     continue
                 
                 # Calculate total distance
-                total_distance = dist + edge_distance * current_node.get_cost(edge_distance)
+                base_cost = edge_distance * current_node.get_cost(edge_distance)
+                total_distance = dist + base_cost
                 
                 if neighbor_id not in distances or total_distance < distances[neighbor_id]:
                     distances[neighbor_id] = total_distance
@@ -243,30 +269,67 @@ class RoutingGraph:
         
         return []  # No path found
     
-    def _nearest_node(self, location: Tuple[float, float]) -> Optional[str]:
-        """Find nearest node to a location."""
+    def _nearest_node(
+        self, 
+        location: Tuple[float, float],
+        accessibility_required: bool = False
+    ) -> Optional[str]:
+        """Find nearest node to a location, with accessibility fallback."""
         if not self.nodes:
             return None
         
         min_dist = float('inf')
         nearest_id = None
+        nearest_accessible_id = None
+        min_accessible_dist = float('inf')
         
         for node_id, node in self.nodes.items():
             dist = self._distance(location, node.location)
+            
+            # Track nearest overall
             if dist < min_dist:
                 min_dist = dist
                 nearest_id = node_id
+            
+            # Track nearest accessible if required
+            if accessibility_required and node.accessible and dist < min_accessible_dist:
+                min_accessible_dist = dist
+                nearest_accessible_id = node_id
         
-        # Only return if within reasonable distance
-        if min_dist < 0.1:  # Threshold
+        # Return accessible node if required, otherwise nearest
+        if accessibility_required:
+            if nearest_accessible_id and min_accessible_dist < self.nearest_node_threshold * 2:
+                return nearest_accessible_id
+            return None
+        
+        # Only return if within threshold
+        if min_dist < self.nearest_node_threshold:
             return nearest_id
         
-        return None
+        # Fallback: return nearest anyway if no node within threshold
+        return nearest_id
     
     def update_node_load(self, node_id: str, load: float):
         """Update traffic load on a node."""
         if node_id in self.nodes:
             self.nodes[node_id].current_load = load
+    
+    def update_loads_from_analytics(self, analytics_engine):
+        """Update node loads based on crowd density from analytics."""
+        # Get hotspots from analytics
+        hotspots = analytics_engine.get_hotspots(metric="crowd_density", threshold=0.5)
+        
+        # Update node loads based on nearby hotspots
+        for hotspot in hotspots:
+            location = hotspot["location"]
+            density = hotspot["value"]
+            
+            # Find nearest node
+            node_id = self._nearest_node(location)
+            if node_id:
+                # Scale load based on density (0-1 density -> 0-100 load)
+                load = density * 100
+                self.update_node_load(node_id, load)
     
     def _distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """Calculate Euclidean distance."""
@@ -279,4 +342,3 @@ class RoutingGraph:
     def get_all_nodes(self) -> List[GraphNode]:
         """Get all nodes in the graph."""
         return list(self.nodes.values())
-

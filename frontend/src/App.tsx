@@ -4,20 +4,16 @@ import ControlPanel from './components/ControlPanel'
 import MetricsPanel from './components/MetricsPanel'
 import { SimulationState } from './types'
 
-type ScenarioSummary = {
-  id: string
-  name: string
-  description?: string
-}
+import { Scenario } from './types'
 
 // WebSocket base URL helper
 const getWsBaseUrl = (): string => {
-  if (typeof window === 'undefined') return 'ws://localhost:8000'
+  if (typeof window === 'undefined') return 'ws://localhost:3333'
   
-  // In development, use explicit port 8000
+  // In development, use explicit port 3333
   // In production, use same host as frontend (behind proxy)
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `ws://${window.location.hostname}:8000`
+    return `ws://${window.location.hostname}:3333`
   }
   
   // Production: use same protocol/host as frontend
@@ -25,12 +21,15 @@ const getWsBaseUrl = (): string => {
 }
 
 function App() {
-  const [scenarios, setScenarios] = useState<ScenarioSummary[]>([])
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null)
   const [simulationState, setSimulationState] = useState<SimulationState | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [connectionLost, setConnectionLost] = useState(false)
+  const [wsError, setWsError] = useState<string | null>(null)
+  const [wsConnecting, setWsConnecting] = useState(false)
   
   // WebSocket lifecycle management
   const wsRef = useRef<WebSocket | null>(null)
@@ -39,10 +38,23 @@ function App() {
 
   useEffect(() => {
     // Load scenarios
+    console.log('Loading scenarios...')
     fetch('/api/scenarios')
-      .then(res => res.json())
-      .then(data => setScenarios(data.scenarios || []))
-      .catch(err => console.error('Failed to load scenarios:', err))
+      .then(res => {
+        console.log('Scenarios API response status:', res.status)
+        if (!res.ok) {
+          throw new Error(`Failed to fetch scenarios: ${res.status} ${res.statusText}`)
+        }
+        return res.json()
+      })
+      .then(data => {
+        console.log('Scenarios loaded:', data.scenarios?.length || 0, 'scenarios')
+        setScenarios(data.scenarios || [])
+      })
+      .catch(err => {
+        console.error('Failed to load scenarios:', err)
+        setError(`Failed to load scenarios: ${err.message}`)
+      })
   }, [])
 
   // Cleanup WebSocket and abort controller on unmount
@@ -64,8 +76,12 @@ function App() {
       abortRef.current?.abort()
       abortRef.current = new AbortController()
       
-      setError(null)
+      // Set loading state immediately to prevent double-clicks
       setIsLoading(true)
+      setError(null)
+      setConnectionLost(false)
+      setWsError(null)
+      setWsConnecting(false)
       setSelectedScenario(scenarioId) // Set immediately for visual feedback
       
       // Close existing WebSocket if any
@@ -75,9 +91,8 @@ function App() {
         wsRef.current = null
       }
 
-      // Clear previous state
-      setSimulationState(null)
-      setIsRunning(false)
+      // Set running to true immediately to prevent multiple clicks
+      setIsRunning(true)
 
       console.log('📡 Calling API to start simulation...')
       const response = await fetch(`/api/scenarios/${scenarioId}/run`, {
@@ -102,8 +117,9 @@ function App() {
       
       setIsRunning(true)
       setIsLoading(false)
+      setWsConnecting(true)
       
-      // Connect WebSocket
+      // Connect WebSocket immediately (no delay)
       console.log('🔌 Connecting WebSocket for run_id:', data.run_id)
       connectWebSocket(data.run_id)
     } catch (error: any) {
@@ -117,7 +133,9 @@ function App() {
       setIsRunning(false)
       setIsLoading(false)
       setError(error.message || 'Failed to start simulation')
+      setConnectionLost(false)
       // Don't reset selectedScenario on error - let user see what they clicked
+      // Don't clear simulationState - keep last visualization visible
     }
   }
 
@@ -128,15 +146,18 @@ function App() {
       wsRef.current = null
     }
 
-    const MAX_ATTEMPTS = 5
-    const RETRY_DELAY = 200
+    const MAX_ATTEMPTS = 3  // Reduced from 5 for faster boot
+    const RETRY_DELAY = 100  // Reduced from 200ms for faster boot
 
     // Verify backend run exists before connecting WebSocket
     const verifyAndConnect = async () => {
       try {
-        // First verify the run exists
+        // First verify the run exists (with shorter timeout)
         console.log(`🔍 Verifying run exists (attempt ${attempt + 1}/${MAX_ATTEMPTS}):`, runId)
-        const verifyRes = await fetch(`http://localhost:8000/api/runs/${runId}/state`)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 1000) // 1 second timeout
+        const verifyRes = await fetch(`/api/runs/${runId}/state`, { signal: controller.signal })
+        clearTimeout(timeoutId)
         
         if (!verifyRes.ok) {
           if (attempt < MAX_ATTEMPTS - 1) {
@@ -155,7 +176,7 @@ function App() {
         
         console.log('✅ Backend run exists, connecting WebSocket...')
         
-        // Now connect WebSocket
+        // Now connect WebSocket immediately
         const wsUrl = `${getWsBaseUrl()}/ws/runs/${runId}`
         console.log('Connecting to WebSocket:', wsUrl)
         
@@ -165,6 +186,9 @@ function App() {
         ws.onopen = () => {
           console.log('✅ WebSocket connected successfully')
           setError(null) // Clear any previous errors
+          setWsError(null)
+          setWsConnecting(false)
+          setConnectionLost(false)
         }
         
         ws.onmessage = (event) => {
@@ -180,29 +204,56 @@ function App() {
               return
             }
             
-            // Validate message shape
+            // Handle completed message separately (doesn't have agents structure)
+            if (message.type === 'completed') {
+              console.log('✅ Simulation completed')
+              setIsRunning(false)
+              setIsLoading(false)
+              setWsConnecting(false)
+              // Keep the final state visible
+              if (message.data && message.data.metrics) {
+                // Update metrics if provided
+                console.log('Final metrics:', message.data.metrics)
+              }
+              return
+            }
+            
+            // Validate message shape for state/update messages
             if (!message.data || !message.data.agents || typeof message.data.agents !== 'object') {
               console.warn('Invalid message shape, skipping:', message)
               return
             }
             
             if (message.type === 'state' || message.type === 'update') {
-              console.log('Setting simulation state:', {
+              const agentCounts = message.data.agents ? {
+                athletes: message.data.agents.athletes?.length || 0,
+                volunteers: message.data.agents.volunteers?.length || 0,
+                security: message.data.agents.security?.length || 0,
+                lvmpd: message.data.agents.lvmpd?.length || 0,
+                amr: message.data.agents.amr?.length || 0,
+                buses: message.data.agents.buses?.length || 0,
+              } : {}
+              
+              console.log('✅ Setting simulation state:', {
+                type: message.type,
                 agents: Object.keys(message.data.agents || {}),
-                agentCounts: message.data.agents ? {
-                  athletes: message.data.agents.athletes?.length || 0,
-                  volunteers: message.data.agents.volunteers?.length || 0,
-                  security: message.data.agents.security?.length || 0,
-                  lvmpd: message.data.agents.lvmpd?.length || 0,
-                  amr: message.data.agents.amr?.length || 0,
-                  buses: message.data.agents.buses?.length || 0,
-                } : {},
+                agentCounts,
+                totalAgents: Object.values(agentCounts).reduce((a: number, b: number) => a + b, 0),
+                time: message.data.time,
               })
               setSimulationState(message.data)
             } else if (message.type === 'completed') {
+              console.log('✅ Simulation completed')
               setIsRunning(false)
               setIsLoading(false)
+              // Keep the final state visible
               setSimulationState(message.data)
+            } else if (message.type === 'error') {
+              console.error('WebSocket error message:', message.error)
+              setError(`WebSocket error: ${message.error}`)
+              // Don't clear state - keep visualization visible
+              setIsRunning(false)
+              setIsLoading(false)
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error, event.data)
@@ -221,9 +272,13 @@ function App() {
             return
           }
           
-          setError('WebSocket connection failed after retries')
+          const errorMsg = 'WebSocket connection failed after retries. Check backend logs.'
+          setError(errorMsg)
+          setWsError(errorMsg)
           setIsRunning(false)
           setIsLoading(false)
+          setWsConnecting(false)
+          setConnectionLost(true)
         }
         
         ws.onclose = (event) => {
@@ -238,12 +293,19 @@ function App() {
           setIsRunning(false)
           setIsLoading(false)
           
+          // DON'T clear simulationState - keep the last state visible
+          // Only show error if it wasn't a clean close
           if (!event.wasClean && event.code !== 1000) {
+            setConnectionLost(true)
             if (event.code === 1006) {
-              setError('WebSocket connection closed unexpectedly. Check backend logs.')
+              setError('WebSocket connection closed unexpectedly. Visualization shows last known state.')
             } else {
-              setError(`WebSocket closed with code ${event.code}`)
+              setError(`WebSocket closed with code ${event.code}. Visualization shows last known state.`)
             }
+          } else if (event.wasClean) {
+            // Clean close - simulation completed
+            console.log('✅ WebSocket closed cleanly - simulation completed')
+            setConnectionLost(false)
           }
         }
         
@@ -259,6 +321,7 @@ function App() {
         setError(`Connection error: ${err.message}`)
         setIsRunning(false)
         setIsLoading(false)
+        setConnectionLost(true)
       }
     }
     
@@ -284,12 +347,19 @@ function App() {
           isRunning={isRunning}
           isLoading={isLoading}
           error={error}
+          wsError={wsError}
+          wsConnecting={wsConnecting}
         />
       </div>
 
       {/* Center 3D Visualization */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative" style={{ minHeight: 0, minWidth: 0 }}>
         <View3D state={simulationState} />
+        {connectionLost && simulationState && (
+          <div className="absolute top-20 left-4 z-20 text-white text-xs bg-orange-500/80 px-3 py-2 rounded backdrop-blur-sm border border-orange-400">
+            ⚠️ Connection lost - showing last known state
+          </div>
+        )}
       </div>
 
       {/* Right Metrics Panel */}

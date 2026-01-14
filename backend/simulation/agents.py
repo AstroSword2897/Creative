@@ -110,7 +110,12 @@ class Athlete(Agent):
             self.current_location = self.target_location
             return
         
-        # Move towards next waypoint
+        # Move towards next waypoint (with bounds checking)
+        if self.path_index < 0 or self.path_index >= len(self.current_path):
+            self.status = "at_venue"
+            self.current_location = self.target_location
+            return
+        
         next_point = self.current_path[self.path_index]
         distance = self._distance(self.current_location, next_point)
         step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
@@ -504,7 +509,7 @@ class HotelSecurity(Agent):
         """Move towards target."""
         distance = self._distance(start, end)
         step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
-        step_distance = speed * step_seconds.total_seconds()
+        step_distance = speed * step_seconds
         if distance <= step_distance:
             return end
         ratio = step_distance / distance
@@ -814,7 +819,7 @@ class LVMPDUnit(Agent):
         """Move towards target."""
         distance = self._distance(start, end)
         step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
-        step_distance = speed * step_seconds.total_seconds()
+        step_distance = speed * step_seconds
         if distance <= step_distance:
             return end
         ratio = step_distance / distance

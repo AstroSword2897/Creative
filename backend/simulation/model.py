@@ -26,7 +26,12 @@ class RandomActivation:
         random.shuffle(self.agents)
         for agent in self.agents:
             if hasattr(agent, 'step'):
-                agent.step()
+                try:
+                    agent.step()
+                except Exception as e:
+                    # Log but don't crash - allow simulation to continue
+                    import warnings
+                    warnings.warn(f"Error in agent {getattr(agent, 'unique_id', 'unknown')} step(): {e}")
 
 from .agents import (
     Athlete, Volunteer, HotelSecurity, LVMPDUnit, AMRUnit, Bus, SecurityCommandCenter
@@ -95,6 +100,9 @@ class SpecialOlympicsModel(Model):
         self.buses = []
         self.command_center = None
         
+        # Simulation state tracking (for Mesa 3.x compatibility)
+        self._should_continue = True
+        
         # Events and incidents
         self.scheduled_events = scenario_config.get("events", [])
         self.active_incidents = []
@@ -139,57 +147,6 @@ class SpecialOlympicsModel(Model):
         lat = y * (self.lat_max - self.lat_min) + self.lat_min
         lon = x * (self.lon_max - self.lon_min) + self.lon_min
         return (lat, lon)
-        
-        # Route planner (legacy - kept for compatibility)
-        self.route_planner = RoutePlanner(self.venues)
-        
-        # Enhanced systems
-        self.graph_router = RoutingGraph(self.venues)
-        self.scheduler = DynamicScheduler(self)
-        self.alert_manager = GlobalAlertManager(self)
-        self.analytics = AnalyticsEngine(self, grid_size=20)
-        
-        # Agent tracking
-        self.athletes = []
-        self.volunteers = []
-        self.hotel_security = []
-        self.lvmpd_units = []
-        self.amr_units = []
-        self.buses = []
-        self.command_center = None
-        
-        # Events and incidents
-        self.scheduled_events = scenario_config.get("events", [])
-        self.active_incidents = []
-        self.active_alerts = {}  # hotel_id -> list of alerts
-        self.medical_events = []
-        self.completed_transports = []
-        
-        # Metrics
-        self.metrics = {
-            "safety_score": 100.0,
-            "avg_response_time": 0.0,
-            "containment_rate": 1.0,
-            "athlete_delay_minutes": 0.0,
-            "accessibility_coverage": 1.0,
-            "medical_events_count": 0,
-            "incidents_resolved": 0,
-        }
-        
-        # Access control
-        self.access_control = scenario_config.get("access_control", {})
-        
-        # Initialize agents
-        self._initialize_agents(scenario_config.get("agents", {}))
-        
-        # Initialize scheduled events
-        self._initialize_events()
-        
-        # Hospital locations (hardcoded for now)
-        self.hospitals = [
-            (36.1447, -115.1481),  # UMC
-            (36.1694, -115.1231),  # Sunrise Hospital
-        ]
     
     def _initialize_agents(self, agent_config: Dict):
         """Initialize all agents based on scenario config."""
@@ -352,24 +309,34 @@ class SpecialOlympicsModel(Model):
         # Update metrics
         self._update_metrics()
         
-        # Check if simulation should end
+        # Check if simulation should end (Mesa 3.x wraps step() and doesn't return value)
         if self.current_time >= self.end_time:
-            return False
-        return True
+            self._should_continue = False
+        else:
+            self._should_continue = True
+    
+    def should_continue(self) -> bool:
+        """Check if simulation should continue (Mesa 3.x compatibility)."""
+        return self._should_continue
     
     def _process_scheduled_events(self):
         """Process events scheduled for current time."""
         current_time_str = self.current_time.strftime("%H:%M")
         
+        # Process events safely without modifying list while iterating
+        events_to_process = []
         for event in self.scheduled_events:
             event_time = event.get("t", "")
             if event_time == current_time_str or abs(
                 (datetime.strptime(f"2024-06-01 {event_time}", "%Y-%m-%d %H:%M") - self.current_time).total_seconds()
             ) < self.step_duration.total_seconds():
-                self._handle_event(event)
-                # Mark as processed (remove from list)
+                events_to_process.append(event)
+        
+        # Process and remove events
+        for event in events_to_process:
+            self._handle_event(event)
+            if event in self.scheduled_events:
                 self.scheduled_events.remove(event)
-                break
     
     def _handle_event(self, event: Dict):
         """Handle a scheduled event."""
@@ -667,6 +634,45 @@ class SpecialOlympicsModel(Model):
     
     def get_state(self) -> Dict:
         """Get current simulation state for API."""
+        # Helper to ensure JSON serializable
+        def make_serializable(obj):
+            """Convert objects to JSON-serializable format."""
+            if isinstance(obj, tuple):
+                return list(obj)
+            elif isinstance(obj, dict):
+                return {str(k): make_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_serializable(item) for item in obj]
+            elif hasattr(obj, 'isoformat'):  # datetime
+                return obj.isoformat()
+            else:
+                return obj
+        
+        # Serialize command center data
+        command_center_data = None
+        if self.command_center:
+            # Convert threat_map tuples to lists
+            threat_map_serialized = {
+                str(list(k)): v for k, v in self.command_center.threat_map.items()
+            }
+            # Convert hotspots location tuples to lists
+            hotspots_serialized = [
+                {
+                    "location": list(h["location"]) if isinstance(h["location"], tuple) else h["location"],
+                    "threat_level": h["threat_level"],
+                }
+                for h in self.command_center.hotspots
+            ]
+            command_center_data = {
+                "location": (
+                    list(self.command_center.current_location)
+                    if isinstance(self.command_center.current_location, tuple)
+                    else self.command_center.current_location
+                ),
+                "threat_map": threat_map_serialized,
+                "hotspots": hotspots_serialized,
+            }
+        
         return {
             "time": self.current_time.isoformat(),
             "agents": {
@@ -674,7 +680,11 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": a.unique_id,
                         "type": "athlete",
-                        "location": a.current_location,
+                        "location": (
+                            list(a.current_location)
+                            if isinstance(a.current_location, tuple)
+                            else a.current_location
+                        ),
                         "status": a.status,
                         "medical_event": a.medical_event,
                     }
@@ -684,7 +694,11 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": v.unique_id,
                         "type": "volunteer",
-                        "location": v.current_location,
+                        "location": (
+                            list(v.current_location)
+                            if isinstance(v.current_location, tuple)
+                            else v.current_location
+                        ),
                         "status": v.status,
                     }
                     for v in self.volunteers if v.current_location
@@ -693,7 +707,11 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": s.unique_id,
                         "type": "hotel_security",
-                        "location": s.current_location,
+                        "location": (
+                            list(s.current_location)
+                            if isinstance(s.current_location, tuple)
+                            else s.current_location
+                        ),
                         "status": s.status,
                         "hotel_id": s.hotel_id,
                     }
@@ -703,7 +721,11 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": u.unique_id,
                         "type": "lvmpd",
-                        "location": u.current_location,
+                        "location": (
+                            list(u.current_location)
+                            if isinstance(u.current_location, tuple)
+                            else u.current_location
+                        ),
                         "status": u.status,
                     }
                     for u in self.lvmpd_units if u.current_location
@@ -712,7 +734,11 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": u.unique_id,
                         "type": "amr",
-                        "location": u.current_location,
+                        "location": (
+                            list(u.current_location)
+                            if isinstance(u.current_location, tuple)
+                            else u.current_location
+                        ),
                         "status": u.status,
                     }
                     for u in self.amr_units if u.current_location
@@ -721,29 +747,26 @@ class SpecialOlympicsModel(Model):
                     {
                         "id": b.unique_id,
                         "type": "bus",
-                        "location": b.current_location,
+                        "location": (
+                            list(b.current_location)
+                            if isinstance(b.current_location, tuple)
+                            else b.current_location
+                        ),
                         "status": b.status,
                     }
                     for b in self.buses if b.current_location
                 ],
             },
-            "incidents": self.active_incidents,
-            "metrics": self.metrics,
-            "command_center": (
-                {
-                    "location": self.command_center.current_location,
-                    "threat_map": list(self.command_center.threat_map.items()),
-                    "hotspots": self.command_center.hotspots,
-                }
-                if self.command_center else None
-            ),
+            "incidents": make_serializable(self.active_incidents),
+            "metrics": make_serializable(self.metrics),
+            "command_center": command_center_data,
             "security_metrics": {
                 "hotel_security": [
-                    s.get_security_metrics() if hasattr(s, 'get_security_metrics') else {}
+                    make_serializable(s.get_security_metrics() if hasattr(s, 'get_security_metrics') else {})
                     for s in self.hotel_security
                 ],
                 "lvmpd": [
-                    u.get_lvmpd_metrics() if hasattr(u, 'get_lvmpd_metrics') else {}
+                    make_serializable(u.get_lvmpd_metrics() if hasattr(u, 'get_lvmpd_metrics') else {})
                     for u in self.lvmpd_units
                 ],
             },

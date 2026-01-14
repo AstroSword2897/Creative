@@ -7,11 +7,12 @@ interface View3DProps {
 }
 
 // Shared geometry cache (created once, reused)
+// Increased base sizes significantly for better visibility
 const geometryCache = {
-  athlete: new THREE.SphereGeometry(0.018, 16, 16),
-  bus: new THREE.BoxGeometry(0.05, 0.024, 0.08),
-  responder: new THREE.CylinderGeometry(0.012, 0.0108, 0.03, 16),
-  default: new THREE.BoxGeometry(0.024, 0.04, 0.024),
+  athlete: new THREE.SphereGeometry(0.04, 16, 16), // Increased to 0.04 for visibility
+  bus: new THREE.BoxGeometry(0.12, 0.06, 0.18), // Increased for visibility
+  responder: new THREE.CylinderGeometry(0.025, 0.022, 0.06, 16), // Increased for visibility
+  default: new THREE.BoxGeometry(0.05, 0.08, 0.05), // Increased for visibility
 }
 
 // Shared material cache (created once, reused)
@@ -60,6 +61,13 @@ const createMaterialCache = () => {
     }
   })
   
+  // Add default material for unknown agent types
+  cache.default = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#888888'),
+    roughness: 0.5,
+    metalness: 0.3,
+  })
+  
   return cache
 }
 
@@ -77,17 +85,29 @@ export default function View3D({ state }: View3DProps) {
   const trailsRef = useRef<Map<number, { line: THREE.Line, buffer: Float32Array, index: number, maxPoints: number }>>(new Map())
   const animationFrameRef = useRef<number | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  // Use a ref to track initialization to prevent dependency loops
+  const isInitializedRef = useRef(false)
+  // Store target positions for smooth interpolation
+  const agentTargetsRef = useRef<Map<number, { x: number, z: number, startX: number, startZ: number, startTime: number, duration: number }>>(new Map())
+  // Track last processed state time to prevent duplicate updates
+  const lastProcessedTimeRef = useRef<string | null>(null)
 
   // Normalize coordinates from lat/lon to 0-1 space
+  // Clamps coordinates to 0-1 to prevent off-plane agents
   const normalizeCoords = (lat: number, lon: number): [number, number] => {
     const latMin = 36.0
     const latMax = 36.2
     const lonMin = -115.3
     const lonMax = -115.1
     
-    const x = (lon - lonMin) / (lonMax - lonMin)
-    const y = (lat - latMin) / (latMax - latMin)
-    return [x, y]
+    let x = (lon - lonMin) / (lonMax - lonMin)
+    let z = (lat - latMin) / (latMax - latMin)
+    
+    // Clamp to 0-1 to prevent off-plane agents
+    x = Math.min(Math.max(x, 0), 1)
+    z = Math.min(Math.max(z, 0), 1)
+    
+    return [x, z]
   }
 
   // Handle coordinate format - backend sends [lat, lon]
@@ -100,7 +120,14 @@ export default function View3D({ state }: View3DProps) {
     return location
   }
 
+  // Helper: parse and normalize coordinates in one step
+  const getNormalizedPos = (loc: [number, number] | null): [number, number] | null => {
+    const parsed = parseLocation(loc)
+    return parsed ? normalizeCoords(parsed[0], parsed[1]) : null
+  }
+
   // Create agent mesh (called once per agent)
+  // Lifts agents above ground and scales for visibility
   const createAgentMesh = (agent: any, x: number, z: number): THREE.Mesh => {
     let geometry: THREE.BufferGeometry
     let material: THREE.Material
@@ -120,15 +147,53 @@ export default function View3D({ state }: View3DProps) {
     }
 
     const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(x, 0.03, z)
-    mesh.castShadow = true
-    mesh.receiveShadow = true
+    
+    // Raise above ground for better visibility
+    const baseHeight = 0.05
+    mesh.position.set(x, baseHeight, z)
+    
+    // Scale for visibility (very large scale to ensure visibility)
+    mesh.scale.set(8, 8, 8) // Increased to 8x for maximum visibility
+    
+    // Make materials brighter and more visible
+    if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      mesh.material.emissiveIntensity = 0.8 // Very bright emissive
+      mesh.material.roughness = 0.2 // More reflective
+      mesh.material.metalness = 0.1
+    }
+    
+    mesh.castShadow = false // Disable shadows for better performance
+    mesh.receiveShadow = false
+    mesh.visible = true // Ensure visibility
     return mesh
   }
 
   // Initialize scene (runs once)
   useEffect(() => {
-    if (!containerRef.current || isInitialized) return
+    // Use ref to prevent re-initialization loops
+    if (!containerRef.current || isInitializedRef.current) return
+
+    // Debug: Check container dimensions
+    const width = containerRef.current.clientWidth
+    const height = containerRef.current.clientHeight
+    console.log(`📐 View3D: Container dimensions - width: ${width}, height: ${height}`)
+    
+    if (width === 0 || height === 0) {
+      console.warn('⚠️ View3D: Container has zero dimensions, retrying...')
+      // Retry after a short delay
+      setTimeout(() => {
+        if (containerRef.current && !isInitializedRef.current) {
+          const retryWidth = containerRef.current.clientWidth
+          const retryHeight = containerRef.current.clientHeight
+          console.log('📐 View3D: Retry dimensions', { retryWidth, retryHeight })
+          if (retryWidth > 0 && retryHeight > 0) {
+            // Force re-run by resetting the ref
+            isInitializedRef.current = false
+          }
+        }
+      }, 100)
+      return
+    }
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x0a0a0f)
@@ -137,34 +202,67 @@ export default function View3D({ state }: View3DProps) {
 
     const camera = new THREE.PerspectiveCamera(
       60,
-      containerRef.current.clientWidth / containerRef.current.clientHeight,
+      width / height,
       0.1,
       1000
     )
-    camera.position.set(0.5, 1.2, 0.8)
-    camera.lookAt(0.5, 0, 0.5)
+    // Camera positioned to see the full 0-1 plane with better view of agents
+    // Higher camera position for better overview, looking down at the scene
+    camera.position.set(0.5, 1.5, 1.5) // Higher camera for better overview
+    camera.lookAt(0.5, 0.1, 0.5) // Look at center of the scene
     cameraRef.current = camera
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }) // Solid background
+    renderer.setSize(width, height)
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)) // Clamp for performance
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    containerRef.current.appendChild(renderer.domElement)
+    
+    // Ensure canvas is visible and properly positioned
+    renderer.domElement.style.display = 'block'
+    renderer.domElement.style.width = '100%'
+    renderer.domElement.style.height = '100%'
+    renderer.domElement.style.position = 'absolute'
+    renderer.domElement.style.top = '0'
+    renderer.domElement.style.left = '0'
+    renderer.domElement.style.zIndex = '0'
+    renderer.domElement.style.outline = 'none' // Remove focus outline
+    renderer.domElement.style.background = '#0a0a0f' // Ensure background color
+    
+    // Clear the container before appending
+    if (containerRef.current) {
+      // Remove any existing canvas
+      const existingCanvas = containerRef.current.querySelector('canvas')
+      if (existingCanvas) {
+        containerRef.current.removeChild(existingCanvas)
+      }
+      containerRef.current.appendChild(renderer.domElement)
+    }
     rendererRef.current = renderer
+    
+    // Force initial render to ensure canvas is visible
+    renderer.render(scene, camera)
+    
+    console.log(`✅ View3D: Renderer created - canvas: ${renderer.domElement.width}x${renderer.domElement.height}, pixelRatio: ${renderer.getPixelRatio()}, style: ${renderer.domElement.style.display}`)
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    // Lighting - brighter for better visibility
+    // Lighting - very bright for maximum visibility
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0) // Maximum ambient
     scene.add(ambientLight)
 
-    const directionalLight = new THREE.DirectionalLight(0xfff8e1, 0.8)
+    const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.2) // Increased intensity
     directionalLight.position.set(1, 2, 1)
-    directionalLight.castShadow = true
-    directionalLight.shadow.camera.left = -2
-    directionalLight.shadow.camera.right = 2
-    directionalLight.shadow.camera.top = 2
-    directionalLight.shadow.camera.bottom = -2
+    directionalLight.castShadow = false // Disable shadows for better performance
     scene.add(directionalLight)
+    
+    // Add additional point light for better visibility
+    const pointLight = new THREE.PointLight(0xffffff, 0.8, 10)
+    pointLight.position.set(0.5, 1.5, 0.5)
+    scene.add(pointLight)
+    
+    // Add hemisphere light for even better visibility
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
+    scene.add(hemisphereLight)
 
     // Ground plane
     const groundGeometry = new THREE.PlaneGeometry(1, 1)
@@ -183,33 +281,41 @@ export default function View3D({ state }: View3DProps) {
     const gridHelper = new THREE.GridHelper(1, 20, 0x333344, 0x222233)
     gridHelper.position.set(0.5, 0.01, 0.5)
     scene.add(gridHelper)
+    
+    // DEBUG: Add bright test objects to verify scene renders (larger, longer-lasting)
+    const testCubeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1)
+    const testCubeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
+    const testCube = new THREE.Mesh(testCubeGeometry, testCubeMaterial)
+    testCube.position.set(0.5, 0.15, 0.5)
+    scene.add(testCube)
+    console.log('🔴 View3D: RED TEST CUBE added at center (0.5, 0.15, 0.5) - should be visible!')
+    
+    // Also add a green sphere
+    const testSphereGeometry = new THREE.SphereGeometry(0.06, 16, 16)
+    const testSphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    const testSphere = new THREE.Mesh(testSphereGeometry, testSphereMaterial)
+    testSphere.position.set(0.6, 0.15, 0.5)
+    scene.add(testSphere)
+    console.log('🟢 View3D: GREEN TEST SPHERE added at (0.6, 0.15, 0.5)')
+    
+    // Remove test objects after 5 seconds (faster cleanup)
+    setTimeout(() => {
+      if (scene.children.includes(testCube)) {
+        scene.remove(testCube)
+        testCubeGeometry.dispose()
+        testCubeMaterial.dispose()
+        console.log('🔴 View3D: Test cube removed')
+      }
+      if (scene.children.includes(testSphere)) {
+        scene.remove(testSphere)
+        testSphereGeometry.dispose()
+        testSphereMaterial.dispose()
+        console.log('🟢 View3D: Test sphere removed')
+      }
+    }, 5000) // Reduced from 10 seconds to 5 seconds
 
-    // Initialize venues (static)
-    const venues = [
-      { name: 'MGM Grand', lat: 36.1027, lon: -115.171, type: 'hotel' },
-      { name: 'UNLV Cox', lat: 36.102, lon: -115.150, type: 'venue' },
-      { name: 'Thomas & Mack', lat: 36.104, lon: -115.152, type: 'venue' },
-      { name: 'Airport', lat: 36.084, lon: -115.153, type: 'airport' },
-    ]
-
-    venues.forEach((venue) => {
-      const [x, z] = normalizeCoords(venue.lat, venue.lon)
-      const color = venue.type === 'hotel' ? '#FFD700' : venue.type === 'venue' ? '#4ECDC4' : '#ffffff'
-      
-      const geometry = new THREE.CylinderGeometry(0.02, 0.02, 0.1, 16)
-      const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
-        emissiveIntensity: 0.25,
-        roughness: 0.3,
-      })
-
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.set(x, 0.05, z)
-      mesh.castShadow = true
-      scene.add(mesh)
-      venuesRef.current.set(venue.name, mesh)
-    })
+    // Venues removed - they were confusing in the visualization
+    // Focus is on agents and their movement only
 
     // Orbit controls
     import('three/examples/jsm/controls/OrbitControls.js').then((module) => {
@@ -221,7 +327,7 @@ export default function View3D({ state }: View3DProps) {
       controls.enablePan = true
       controls.minDistance = 0.3
       controls.maxDistance = 5
-      controls.target.set(0.5, 0, 0.5)
+      controls.target.set(0.5, 0.05, 0.5) // Look at agent height level
       controlsRef.current = controls
     }).catch(() => {
       // Fallback: basic mouse controls
@@ -239,7 +345,7 @@ export default function View3D({ state }: View3DProps) {
         const deltaY = e.clientY - previousMousePosition.y
         camera.position.x -= deltaX * 0.001
         camera.position.y += deltaY * 0.001
-        camera.lookAt(0.5, 0, 0.5)
+        camera.lookAt(0.5, 0.05, 0.5)
         previousMousePosition = { x: e.clientX, y: e.clientY }
       }
       
@@ -248,8 +354,9 @@ export default function View3D({ state }: View3DProps) {
       }
       
       const onWheel = (e: WheelEvent) => {
-        camera.position.multiplyScalar(1 + e.deltaY * 0.001)
-        camera.lookAt(0.5, 0, 0.5)
+        const zoomFactor = Math.max(0.3, Math.min(5, 1 + e.deltaY * 0.001))
+        camera.position.multiplyScalar(zoomFactor)
+        camera.lookAt(0.5, 0.05, 0.5)
       }
       
       renderer.domElement.addEventListener('mousedown', onMouseDown)
@@ -269,10 +376,18 @@ export default function View3D({ state }: View3DProps) {
       }
     })
 
+    // Mark as initialized using both state and ref
+    isInitializedRef.current = true
     setIsInitialized(true)
 
-    // Animation loop
+    // Animation loop - ensure it always runs
     const animate = () => {
+      if (!renderer || !camera || !scene) {
+        // Retry if not ready yet
+        animationFrameRef.current = requestAnimationFrame(animate)
+        return
+      }
+      
       animationFrameRef.current = requestAnimationFrame(animate)
       
       if (controlsRef.current && controlsRef.current.update) {
@@ -290,9 +405,43 @@ export default function View3D({ state }: View3DProps) {
         }
       })
 
-      renderer.render(scene, camera)
+      // Smoothly interpolate agent positions
+      const now = Date.now()
+      agentTargetsRef.current.forEach((target, agentId) => {
+        const mesh = agentsRef.current.get(agentId)
+        if (!mesh) return
+
+        const elapsed = now - target.startTime
+        const progress = Math.min(elapsed / target.duration, 1)
+        
+        // Ease-out cubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3)
+        
+        const currentX = target.startX + (target.x - target.startX) * eased
+        const currentZ = target.startZ + (target.z - target.startZ) * eased
+        
+        // Use same baseHeight as in createAgentMesh
+        mesh.position.set(currentX, 0.05, currentZ)
+        
+        // Remove completed interpolations
+        if (progress >= 1) {
+          agentTargetsRef.current.delete(agentId)
+        }
+      })
+
+      // Always render - even if no agents yet, show the ground and venues
+      try {
+        renderer.render(scene, camera)
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('⚠️ View3D: Render error:', error)
+        }
+      }
     }
+    // Start animation immediately
     animate()
+    
+    console.log(`✅ View3D: Scene initialized - children: ${scene.children.length}, ground: ${scene.children.some(c => c.type === 'Mesh' && c.position.y === 0)}, grid: ${scene.children.some(c => c.type === 'GridHelper')}`)
 
     // Handle resize
     const handleResize = () => {
@@ -304,46 +453,147 @@ export default function View3D({ state }: View3DProps) {
     window.addEventListener('resize', handleResize)
 
     return () => {
+      // Cleanup: Remove event listeners
       window.removeEventListener('resize', handleResize)
+      
+      // Cancel animation frame
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
       }
+      
+      // Dispose controls
       if (controlsRef.current && controlsRef.current.dispose) {
         controlsRef.current.dispose()
+        controlsRef.current = null
       }
+      
+      // Clean up all agents and their trails
+      agentsRef.current.forEach((mesh, id) => {
+        scene.remove(mesh)
+        const trail = trailsRef.current.get(id)
+        if (trail) {
+          scene.remove(trail.line)
+          trail.line.geometry.dispose()
+          if (Array.isArray(trail.line.material)) {
+            trail.line.material.forEach(m => m.dispose())
+          } else {
+            trail.line.material.dispose()
+          }
+        }
+      })
+      agentsRef.current.clear()
+      trailsRef.current.clear()
+      agentTargetsRef.current.clear()
+      
+      // Clean up incidents
+      incidentsRef.current.forEach((mesh) => {
+        scene.remove(mesh)
+        mesh.geometry.dispose()
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(m => m.dispose())
+        } else {
+          mesh.material.dispose()
+        }
+      })
+      incidentsRef.current.clear()
+      
+      // Clean up venues (they use shared geometry/material, so just remove from scene)
+      venuesRef.current.forEach((mesh) => {
+        scene.remove(mesh)
+      })
+      venuesRef.current.clear()
+      
+      // Remove renderer from DOM
       if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement)
+        try {
+          containerRef.current.removeChild(renderer.domElement)
+        } catch (e) {
+          // Element may already be removed
+        }
       }
+      
+      // Dispose renderer (this also disposes the WebGL context)
       renderer.dispose()
+      
+      // Clear refs (but don't clear sceneRef if we're just re-initializing)
+      // sceneRef.current = null // Don't clear - let it persist
+      rendererRef.current = null
+      cameraRef.current = null
+      // Only reset refs on actual unmount - don't reset state to prevent re-initialization loop
+      isInitializedRef.current = false
+      // Don't reset isInitialized state here - it will be reset when component unmounts
     }
-  }, [isInitialized])
+    // Empty dependency array - this effect should only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Update agents (DIFF-BASED: only create/update/remove as needed)
   useEffect(() => {
-    if (!sceneRef.current || !state) {
-      console.log('View3D: No scene or state', { hasScene: !!sceneRef.current, hasState: !!state })
+    // Check both state and ref for initialization
+    if (!isInitialized || !isInitializedRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ View3D: Agent update skipped - not initialized')
+      }
+      return
+    }
+    
+    if (!sceneRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('⚠️ View3D: Agent update skipped - no scene ref', {
+          isInitialized,
+          isInitializedRef: isInitializedRef.current,
+          sceneRefExists: !!sceneRef.current,
+          hasState: !!state
+        })
+      }
+      // Don't set timeout - just return and wait for next state update
+      return
+    }
+    
+    if (!state) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ View3D: Agent update skipped - no state')
+      }
       return
     }
 
-    const scene = sceneRef.current
-    const allAgents = [
-      ...state.agents.athletes,
-      ...state.agents.volunteers,
-      ...state.agents.security,
-      ...state.agents.lvmpd,
-      ...state.agents.amr,
-      ...state.agents.buses,
-    ]
+    // Prevent duplicate processing of the same state
+    const currentTime = state.time || ''
+    if (lastProcessedTimeRef.current === currentTime) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ View3D: Agent update skipped - duplicate time:', currentTime)
+      }
+      return // Skip duplicate updates
+    }
+    lastProcessedTimeRef.current = currentTime
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎨 View3D: Processing agents for time:', currentTime)
+    }
 
-    console.log('View3D: Updating agents', {
-      total: allAgents.length,
-      athletes: state.agents.athletes.length,
-      volunteers: state.agents.volunteers.length,
-      security: state.agents.security.length,
-      lvmpd: state.agents.lvmpd.length,
-      amr: state.agents.amr.length,
-      buses: state.agents.buses.length,
-    })
+    const scene = sceneRef.current
+    
+    // Safely extract agents with null checks
+    const allAgents = [
+      ...(state.agents?.athletes || []),
+      ...(state.agents?.volunteers || []),
+      ...(state.agents?.security || []),
+      ...(state.agents?.lvmpd || []),
+      ...(state.agents?.amr || []),
+      ...(state.agents?.buses || []),
+    ]
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 View3D: State check', {
+        hasState: !!state,
+        hasAgents: !!state?.agents,
+        agentKeys: state?.agents ? Object.keys(state.agents) : [],
+        allAgentsLength: allAgents.length,
+        sceneChildren: scene.children.length,
+        agentsRefSize: agentsRef.current.size,
+      })
+    }
 
     // Track which agents exist in current state
     const seen = new Set<number>()
@@ -353,30 +603,69 @@ export default function View3D({ state }: View3DProps) {
     let updated = 0
     let skipped = 0
     
+    // Debug logging (only log when state actually changes)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎨 View3D: Processing agents', {
+        total: allAgents.length,
+        athletes: state.agents.athletes.length,
+        volunteers: state.agents.volunteers.length,
+        security: state.agents.security.length,
+        lvmpd: state.agents.lvmpd.length,
+        amr: state.agents.amr.length,
+        buses: state.agents.buses.length,
+        time: state.time,
+      })
+      
+      // Log first few agent locations for debugging
+      if (allAgents.length > 0) {
+        const sample = allAgents.slice(0, 3)
+        sample.forEach((a, i) => {
+          const norm = getNormalizedPos(a.location)
+          console.log(`  Agent ${i}: id=${a.id}, type=${a.type}, location=${JSON.stringify(a.location)}, normalized=${norm ? JSON.stringify(norm) : 'null'}`)
+        })
+      }
+    }
+    
     allAgents.forEach((agent) => {
       if (!agent.location) {
         skipped++
+        if (process.env.NODE_ENV === 'development' && skipped <= 3) {
+          console.warn('⚠️ View3D: Agent missing location', { id: agent.id, type: agent.type })
+        }
         return
       }
 
-      const parsedLoc = parseLocation(agent.location)
-      if (!parsedLoc) {
+      const normalizedPos = getNormalizedPos(agent.location)
+      if (!normalizedPos) {
+        skipped++
+        if (process.env.NODE_ENV === 'development' && skipped <= 3) {
+          console.warn('⚠️ View3D: Failed to normalize position', { 
+            id: agent.id, 
+            type: agent.type,
+            location: agent.location 
+          })
+        }
+        return
+      }
+
+      const [x, z] = normalizedPos
+      
+      // Coordinates are already clamped in normalizeCoords, so they should always be in [0,1]
+      // But add extra safety check
+      if (isNaN(x) || isNaN(z) || !isFinite(x) || !isFinite(z)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ View3D: Agent position invalid (NaN/Infinity)', {
+            id: agent.id,
+            type: agent.type,
+            normalized: [x, z],
+            original: agent.location,
+          })
+        }
         skipped++
         return
       }
-
-      const [x, z] = normalizeCoords(parsedLoc[0], parsedLoc[1])
-      seen.add(agent.id)
       
-      // Debug first few agents
-      if (created + updated < 3) {
-        console.log(`Agent ${agent.id} (${agent.type}):`, {
-          location: agent.location,
-          parsed: parsedLoc,
-          normalized: [x, z],
-          position: [x, 0.03, z]
-        })
-      }
+      seen.add(agent.id)
 
       const existing = agentsRef.current.get(agent.id)
       
@@ -386,6 +675,26 @@ export default function View3D({ state }: View3DProps) {
         scene.add(mesh)
         agentsRef.current.set(agent.id, mesh)
         created++
+        
+        if (process.env.NODE_ENV === 'development' && created <= 5) {
+          console.log('✨ View3D: Created agent mesh', {
+            id: agent.id,
+            type: agent.type,
+            position: [x, 0.05, z],
+            scale: mesh.scale.toArray(),
+            meshInScene: scene.children.includes(mesh),
+            materialColor: mesh.material instanceof THREE.MeshStandardMaterial ? mesh.material.color.getHexString() : 'N/A',
+            geometryType: mesh.geometry.type,
+            geometrySize: mesh.geometry instanceof THREE.SphereGeometry ? (mesh.geometry as THREE.SphereGeometry).parameters.radius : 'N/A',
+          })
+          
+          // Verify mesh is actually in scene after adding
+          setTimeout(() => {
+            const inScene = scene.children.includes(mesh)
+            const meshPos = mesh.position.toArray()
+            console.log(`🔍 View3D: Mesh ${agent.id} verification - inScene: ${inScene}, position: [${meshPos[0].toFixed(3)}, ${meshPos[1].toFixed(3)}, ${meshPos[2].toFixed(3)}], visible: ${mesh.visible}`)
+          }, 100)
+        }
 
         // Create trail for athletes
         if (agent.type === 'athlete') {
@@ -404,33 +713,51 @@ export default function View3D({ state }: View3DProps) {
           trailsRef.current.set(agent.id, { line, buffer, index: 0, maxPoints })
         }
       } else {
-        // Update existing agent position
-        existing.position.set(x, 0.03, z)
+        // Smooth interpolation: store target position
+        const currentPos = existing.position
+        const currentX = currentPos.x
+        const currentZ = currentPos.z
+        
+        // Only interpolate if position actually changed
+        const distance = Math.sqrt(Math.pow(x - currentX, 2) + Math.pow(z - currentZ, 2))
+        if (distance > 0.001) {
+          // Dynamic interpolation duration based on distance (min 300ms, max 800ms)
+          const baseDuration = 500
+          const distanceFactor = Math.min(distance * 2000, 1) // Scale distance to 0-1
+          const duration = baseDuration + (distanceFactor * 300)
+          
+          agentTargetsRef.current.set(agent.id, {
+            x, z,
+            startX: currentX,
+            startZ: currentZ,
+            startTime: Date.now(),
+            duration,
+          })
+        } else {
+          // Very small movement, set directly (use same baseHeight)
+          existing.position.set(x, 0.05, z)
+        }
         updated++
 
-        // Update trail for athletes
+        // Update trail for athletes (circular buffer - O(1) instead of O(n))
         if (agent.type === 'athlete') {
           const trail = trailsRef.current.get(agent.id)
           if (trail) {
             const { line, buffer, maxPoints } = trail
+            
+            // Use circular buffer: write to current index, wrap around
+            const idx = trail.index % maxPoints
+            buffer[idx * 3] = x
+            buffer[idx * 3 + 1] = 0.04
+            buffer[idx * 3 + 2] = z
+            
+            trail.index++
+            const drawCount = Math.min(trail.index, maxPoints)
+            
+            // Update geometry
             const pos = line.geometry.attributes.position as THREE.BufferAttribute
-            
-            // Shift buffer (ring buffer)
-            for (let i = 0; i < (maxPoints - 1) * 3; i++) {
-              buffer[i] = buffer[i + 3]
-            }
-            
-            // Add new point at end
-            const endIdx = (maxPoints - 1) * 3
-            buffer[endIdx] = x
-            buffer[endIdx + 1] = 0.04
-            buffer[endIdx + 2] = z
-            
             pos.needsUpdate = true
-            trail.index = Math.min(trail.index + 1, maxPoints)
-            
-            // Update draw range
-            line.geometry.setDrawRange(0, trail.index)
+            line.geometry.setDrawRange(0, drawCount)
           }
         }
       }
@@ -457,11 +784,23 @@ export default function View3D({ state }: View3DProps) {
         }
       }
     })
+    
+    // Log summary
+    if (process.env.NODE_ENV === 'development') {
+      if (created > 0 || updated > 0 || skipped > 0) {
+        console.log(`✅ View3D: Agents processed - Created: ${created}, Updated: ${updated}, Skipped: ${skipped}, Total in scene: ${agentsRef.current.size}`)
+      }
+      if (allAgents.length > 0 && created === 0 && updated === 0) {
+        console.warn(`⚠️ View3D: ${allAgents.length} agents in state but none processed!`)
+      }
+    }
+    // Only depend on state - isInitialized is checked via ref to prevent loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
   // Update incidents (DIFF-BASED)
   useEffect(() => {
-    if (!sceneRef.current || !state) return
+    if (!isInitialized || !isInitializedRef.current || !sceneRef.current || !state) return
 
     const scene = sceneRef.current
     const seen = new Set<string>()
@@ -470,10 +809,10 @@ export default function View3D({ state }: View3DProps) {
       state.incidents.forEach((incident: any) => {
         if (!incident.location || !Array.isArray(incident.location)) return
 
-        const parsedLoc = parseLocation(incident.location as [number, number])
-        if (!parsedLoc) return
+        const normalizedPos = getNormalizedPos(incident.location as [number, number])
+        if (!normalizedPos) return
 
-        const [x, z] = normalizeCoords(parsedLoc[0], parsedLoc[1])
+        const [x, z] = normalizedPos
         const incidentId = incident.id || Math.random().toString()
         seen.add(incidentId)
 
@@ -517,6 +856,8 @@ export default function View3D({ state }: View3DProps) {
         incidentsRef.current.delete(id)
       }
     })
+    // Only depend on state - isInitialized is checked via ref to prevent loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
   return (
@@ -527,48 +868,58 @@ export default function View3D({ state }: View3DProps) {
         background: 'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%)',
         minHeight: '100%',
         minWidth: '100%',
+        width: '100%',
+        height: '100%',
+        position: 'relative',
       }}
     >
-      {/* Info overlay */}
-      <div className="absolute top-4 left-4 z-10 text-white text-sm bg-black/50 px-3 py-2 rounded backdrop-blur-sm">
-        <div className="font-semibold mb-1">3D Visualization</div>
-        <div className="text-xs opacity-75">
+      {/* Info overlay - pointer-events-none so it doesn't block canvas */}
+      <div className="absolute top-4 left-4 z-10 text-white text-sm bg-black/60 px-4 py-3 rounded-lg backdrop-blur-md border border-white/10 pointer-events-none">
+        <div className="font-semibold mb-1 text-base">3D Live Simulation</div>
+        <div className="text-xs opacity-80 mb-2">
           Click & drag to rotate • Scroll to zoom • Right-click to pan
         </div>
-        {!state && (
-          <div className="text-xs mt-2 opacity-90" style={{ color: '#FFD700' }}>
-            Select a scenario to start simulation
+        {isInitialized && (
+          <div className="text-xs mt-2 text-green-400">
+            ✓ Scene: {agentsRef.current.size} agents rendered
+          </div>
+        )}
+        {!state && isInitialized && (
+          <div className="text-xs mt-2 opacity-90 flex items-center gap-2" style={{ color: '#FFD700' }}>
+            <span className="animate-pulse">●</span>
+            <span>Click a scenario button to start</span>
           </div>
         )}
         {state && (
-          <div className="text-xs mt-2 opacity-90" style={{ color: '#2ECC71' }}>
-            Simulation active • {Object.values(state.agents).flat().length} agents
+          <div className="text-xs mt-2 opacity-90 flex items-center gap-2" style={{ color: '#2ECC71' }}>
+            <span className="animate-pulse">●</span>
+            <span>{Object.values(state.agents || {}).flat().length} agents in state</span>
           </div>
         )}
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-10 text-white text-xs bg-black/50 px-3 py-2 rounded backdrop-blur-sm">
-        <div className="font-semibold mb-2">Legend</div>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#F4C430]"></div>
+      <div className="absolute bottom-4 left-4 z-10 text-white text-xs bg-black/70 px-3 py-2 rounded backdrop-blur-sm border border-white/10">
+        <div className="font-semibold mb-2" style={{ fontSize: '13px', fontWeight: 600 }}>Legend</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#F4C430', flexShrink: 0 }}></div>
             <span>Athletes</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#2ECC71]"></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#2ECC71', flexShrink: 0 }}></div>
             <span>Volunteers</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#00F5D4]"></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#00F5D4', flexShrink: 0 }}></div>
             <span>Security</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#0077FF]"></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#0077FF', flexShrink: 0 }}></div>
             <span>LVMPD</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#E74C3C]"></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#E74C3C', flexShrink: 0 }}></div>
             <span>AMR</span>
           </div>
         </div>
