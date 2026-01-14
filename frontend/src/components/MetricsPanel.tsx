@@ -73,40 +73,143 @@ export default function MetricsPanel({ state }: MetricsPanelProps) {
 
       {/* Other Metrics */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-        <div className="card-kpi animate-fade-in" style={{ background: 'rgba(18, 20, 23, 0.45)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-          <div className="text-small" style={{ opacity: 0.7, marginBottom: 'var(--spacing-xs)', fontSize: '12px' }}>
+        {/* Average Response Time */}
+        <div className="card-kpi animate-fade-in" style={{ 
+          background: 'rgba(18, 20, 23, 0.65)', 
+          border: '2px solid rgba(0, 245, 212, 0.3)', 
+          padding: '16px', 
+          borderRadius: '8px',
+          minHeight: '80px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center'
+        }}>
+          <div style={{ 
+            fontSize: '11px', 
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '8px', 
+            color: 'rgba(255, 255, 255, 0.8)' 
+          }}>
             Average Response Time
           </div>
-          <div className="text-h3" style={{ color: '#00F5D4', fontSize: '20px', fontWeight: 600 }}>
-            {(avgResponseTime / 60).toFixed(1)} min
+          <div style={{ 
+            color: avgResponseTime > 0 ? '#00F5D4' : 'rgba(255, 255, 255, 0.4)', 
+            fontSize: '24px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>
+            {avgResponseTime > 0 ? `${(avgResponseTime / 60).toFixed(1)} min` : '— No data'}
           </div>
+          {avgResponseTime === 0 && (
+            <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.3)', marginTop: '4px' }}>
+              Waiting for responses...
+            </div>
+          )}
         </div>
 
-        <div className="card-kpi animate-fade-in" style={{ background: 'rgba(18, 20, 23, 0.45)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-          <div className="text-small" style={{ opacity: 0.7, marginBottom: 'var(--spacing-xs)', fontSize: '12px' }}>
+        {/* Containment Rate */}
+        <div className="card-kpi animate-fade-in" style={{ 
+          background: 'rgba(18, 20, 23, 0.65)', 
+          border: '2px solid rgba(46, 204, 113, 0.3)', 
+          padding: '16px', 
+          borderRadius: '8px',
+          minHeight: '80px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center'
+        }}>
+          <div style={{ 
+            fontSize: '11px', 
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '8px', 
+            color: 'rgba(255, 255, 255, 0.8)' 
+          }}>
             Containment Rate
           </div>
-          <div className="text-h3" style={{ color: '#2ECC71', fontSize: '20px', fontWeight: 600 }}>
-            {(containmentRate * 100).toFixed(1)}%
+          <div style={{ 
+            color: containmentRate > 0 ? '#2ECC71' : 'rgba(255, 255, 255, 0.4)', 
+            fontSize: '24px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>
+            {containmentRate > 0 ? `${(containmentRate * 100).toFixed(1)}%` : '0.0%'}
           </div>
+          {containmentRate === 0 && (medicalEventsCount > 0 || incidents.length > 0) && (
+            <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.3)', marginTop: '4px' }}>
+              {incidentsResolved} of {medicalEventsCount + incidents.length} resolved
+            </div>
+          )}
         </div>
 
-        <div className="card-kpi animate-fade-in" style={{ background: 'rgba(18, 20, 23, 0.45)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-          <div className="text-small" style={{ opacity: 0.7, marginBottom: 'var(--spacing-xs)', fontSize: '12px' }}>
+        {/* Medical Events */}
+        <div className="card-kpi animate-fade-in" style={{ 
+          background: 'rgba(18, 20, 23, 0.65)', 
+          border: '2px solid rgba(231, 76, 60, 0.3)', 
+          padding: '16px', 
+          borderRadius: '8px',
+          minHeight: '80px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center'
+        }}>
+          <div style={{ 
+            fontSize: '11px', 
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '8px', 
+            color: 'rgba(255, 255, 255, 0.8)' 
+          }}>
             Medical Events
           </div>
-          <div className="text-h3" style={{ color: '#E74C3C', fontSize: '20px', fontWeight: 600 }}>
+          <div style={{ 
+            color: '#E74C3C', 
+            fontSize: '28px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>
             {medicalEventsCount}
           </div>
         </div>
 
-        <div className="card-kpi animate-fade-in" style={{ background: 'rgba(18, 20, 23, 0.45)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-          <div className="text-small" style={{ opacity: 0.7, marginBottom: 'var(--spacing-xs)', fontSize: '12px' }}>
+        {/* Incidents Resolved */}
+        <div className="card-kpi animate-fade-in" style={{ 
+          background: 'rgba(18, 20, 23, 0.65)', 
+          border: '2px solid rgba(244, 196, 48, 0.3)', 
+          padding: '16px', 
+          borderRadius: '8px',
+          minHeight: '80px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center'
+        }}>
+          <div style={{ 
+            fontSize: '11px', 
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginBottom: '8px', 
+            color: 'rgba(255, 255, 255, 0.8)' 
+          }}>
             Incidents Resolved
           </div>
-          <div className="text-h3" style={{ color: '#F4C430', fontSize: '20px', fontWeight: 600 }}>
+          <div style={{ 
+            color: incidentsResolved > 0 ? '#F4C430' : 'rgba(255, 255, 255, 0.4)', 
+            fontSize: '28px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>
             {incidentsResolved}
           </div>
+          {incidentsResolved === 0 && (medicalEventsCount > 0 || incidents.length > 0) && (
+            <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.3)', marginTop: '4px' }}>
+              {medicalEventsCount + incidents.length} active
+            </div>
+          )}
         </div>
       </div>
 
