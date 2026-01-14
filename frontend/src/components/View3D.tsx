@@ -988,6 +988,7 @@ export default function View3D({ state }: View3DProps) {
           Agent Types
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* ✅ All 6 Agent Types - Clearly Visible */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
               width: '16px', 
@@ -997,7 +998,7 @@ export default function View3D({ state }: View3DProps) {
               border: '2px solid rgba(255,255,255,0.9)',
               boxShadow: '0 0 8px #F4C430',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Athletes (Sphere)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Athletes (Sphere) 🟡</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
@@ -1008,7 +1009,7 @@ export default function View3D({ state }: View3DProps) {
               borderBottom: '16px solid #2ECC71',
               filter: 'drop-shadow(0 0 4px #2ECC71)',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Volunteers (Cone)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Volunteers (Cone) 🟢</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
@@ -1019,7 +1020,7 @@ export default function View3D({ state }: View3DProps) {
               borderRadius: '2px',
               boxShadow: '0 0 8px #00F5D4',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Hotel Security (Cylinder)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Hotel Security (Cylinder) 🔵</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
@@ -1030,7 +1031,7 @@ export default function View3D({ state }: View3DProps) {
               transform: 'rotate(45deg)',
               boxShadow: '0 0 8px #0077FF',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>LVMPD (Diamond)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>LVMPD (Diamond) 🔷</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
@@ -1042,7 +1043,7 @@ export default function View3D({ state }: View3DProps) {
               borderTop: '4px solid transparent',
               filter: 'drop-shadow(0 0 4px #E74C3C)',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>AMR (Triangle)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>AMR Medical (Triangle) 🔺</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ 
@@ -1053,7 +1054,7 @@ export default function View3D({ state }: View3DProps) {
               borderRadius: '2px',
               boxShadow: '0 0 8px #6366F1',
             }} />
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Buses (Box)</span>
+            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>Buses (Box) 🚌</span>
           </div>
         </div>
       </div>
