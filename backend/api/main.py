@@ -461,9 +461,9 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
             while run["status"] == "running":
                 try:
                     if alert_manager:
-                    await alert_manager.update_all_alerts()
-                    await alert_manager.expire_alerts()
-                await asyncio.sleep(2)  # ✅ ENHANCED: Update every 2 seconds instead of 5 for faster metrics
+                        await alert_manager.update_all_alerts()
+                        await alert_manager.expire_alerts()
+                    await asyncio.sleep(2)  # ✅ ENHANCED: Update every 2 seconds instead of 5 for faster metrics
                 except Exception as e:
                     print(f"Error in alert update task: {e}")
                     import traceback
