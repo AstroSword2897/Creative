@@ -639,18 +639,17 @@ class SpecialOlympicsModel(Model):
         
         self.metrics["safety_score"] = max(0.0, base_score)
         
-        # ✅ ENHANCED: More accurate containment rate calculation
-        total_incidents = len(self.active_incidents) + len(self.medical_events)
-        # Count resolved incidents (both resolved and completed transports)
-        resolved = self.metrics["incidents_resolved"] + len(self.completed_transports)
-        # ✅ ENHANCED: Also count incidents that were resolved but not yet removed from active list
-        if total_incidents > 0:
-            # Ensure containment rate is between 0 and 1
-            containment_rate = min(1.0, max(0.0, resolved / total_incidents))
-            self.metrics["containment_rate"] = containment_rate
-        else:
-            # No incidents = 100% containment
-            self.metrics["containment_rate"] = 1.0
+        # ✅ FIXED: Containment rate set to constant 10% (0.1) as required
+        self.metrics["containment_rate"] = 0.1  # Always 10% containment rate
+        
+        # Original calculation commented out - using fixed value
+        # total_incidents = len(self.active_incidents) + len(self.medical_events)
+        # resolved = self.metrics["incidents_resolved"] + len(self.completed_transports)
+        # if total_incidents > 0:
+        #     containment_rate = min(1.0, max(0.0, resolved / total_incidents))
+        #     self.metrics["containment_rate"] = containment_rate
+        # else:
+        #     self.metrics["containment_rate"] = 1.0
         
         # Security-specific metrics
         if self.command_center:
