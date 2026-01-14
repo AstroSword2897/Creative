@@ -207,6 +207,11 @@ async def start_run(scenario_id: str):
         
         print(f"✅ Using pre-initialized simulation for {scenario_id}, run_id: {run_id}")
         print(f"📋 Active runs: {list(active_runs.keys())}")
+        print(f"⏱️ Run {run_id} is now available for WebSocket connections")
+        
+        # ✅ FIXED: Small delay to ensure run is fully registered before returning
+        await asyncio.sleep(0.1)
+        
         return {
             "run_id": run_id,
             "scenario_id": scenario_id,
@@ -249,6 +254,10 @@ async def start_run(scenario_id: str):
     
     print(f"✅ Created new simulation for {scenario_id}, run_id: {run_id}")
     print(f"📋 Active runs: {list(active_runs.keys())}")
+    print(f"⏱️ Run {run_id} is now available for WebSocket connections")
+    
+    # ✅ FIXED: Small delay to ensure run is fully registered before returning
+    await asyncio.sleep(0.1)
     
     return {
         "run_id": run_id,
@@ -350,17 +359,21 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
     print(f"🔌 WebSocket connection attempt for run_id: {run_id}")
     print(f"📋 Current active runs: {list(active_runs.keys())}")
     
-    # ✅ ENHANCED: Reduced wait time for faster connection (handles race condition)
+    # ✅ FIXED: Increased wait time and better logging for WebSocket connection
     import asyncio
-    max_wait = 1.0  # Reduced from 2.0 to 1.0 seconds for faster connection
-    wait_interval = 0.05  # Reduced from 0.1 to 0.05 for faster checks
+    max_wait = 3.0  # Increased to 3 seconds to handle slower backend initialization
+    wait_interval = 0.1  # Check every 100ms
     waited = 0.0
     
+    print(f"⏳ Waiting for run {run_id} to be registered (max {max_wait}s)...")
     while run_id not in active_runs and waited < max_wait:
         await asyncio.sleep(wait_interval)
         waited += wait_interval
-        if waited % 0.2 < wait_interval:  # Only log every 0.2 seconds to reduce noise
-            print(f"⏳ Waiting for run {run_id} to be registered... ({waited:.1f}s)")
+        if waited % 0.5 < wait_interval:  # Log every 0.5 seconds
+            print(f"⏳ Still waiting for run {run_id}... ({waited:.1f}s / {max_wait}s)")
+    
+    if run_id not in active_runs:
+        print(f"⚠️ Run {run_id} not found after {waited:.1f}s. Available runs: {list(active_runs.keys())}")
     
     try:
         await websocket.accept()

@@ -78,17 +78,8 @@ function App() {
 
   const startSimulation = async (scenarioId: string) => {
     try {
-      // ✅ ENHANCED: Prevent duplicate starts - check if already starting this scenario
-      if (isLoading && selectedScenario === scenarioId) {
-        if (DEBUG_MODE) {
-          console.log('⏸️ Already starting this scenario, skipping duplicate start')
-        }
-        return
-      }
-      
-      if (DEBUG_MODE) {
-        console.log('🚀 Starting simulation for scenario:', scenarioId, isRunning ? '(switching from running sim)' : '(new simulation)')
-      }
+      // ✅ FIXED: Always start simulation - removed blocking condition
+      console.log('🚀 Starting simulation for scenario:', scenarioId, isRunning ? '(switching from running sim)' : '(new simulation)')
       
       // ✅ ENHANCED: Abort any in-flight requests and close existing connections
       abortRef.current?.abort()
