@@ -238,12 +238,10 @@ function App() {
               
               console.log('✅ Setting simulation state:', {
                 type: message.type,
-                agents: Object.keys(message.data.agents || {}),
+                agentKeys: Object.keys(message.data.agents || {}),
                 totalAgents,
                 agentCounts,
                 hasTime: !!message.data.time,
-                agentCounts,
-                totalAgents: Object.values(agentCounts).reduce((a: number, b: number) => a + b, 0),
                 time: message.data.time,
               })
               setSimulationState(message.data)
