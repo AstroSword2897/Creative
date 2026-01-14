@@ -92,17 +92,21 @@ class Athlete(Agent):
     
     def _check_medical_risk(self):
         """Check if athlete experiences medical event based on risk factors."""
-        weather = self.model.weather
-        temp_factor = 1.0
-        if weather.get("temp_C", 20) > 35:
-            temp_factor = 1.5 + (weather["temp_C"] - 35) * 0.1
+        # ✅ DISABLED: Medical events are prevented - always return early
+        return
         
-        risk = self.medical_risk * temp_factor
-        step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
-        if random.random() < risk * step_seconds / 3600:  # Per hour probability
-            self.medical_event = True
-            self.status = "emergency"
-            self.model.trigger_medical_event(self)
+        # Original code commented out - medical events disabled
+        # weather = self.model.weather
+        # temp_factor = 1.0
+        # if weather.get("temp_C", 20) > 35:
+        #     temp_factor = 1.5 + (weather["temp_C"] - 35) * 0.1
+        # 
+        # risk = self.medical_risk * temp_factor
+        # step_seconds = self.model.step_duration.total_seconds() if hasattr(self.model.step_duration, 'total_seconds') else self.model.step_duration
+        # if random.random() < risk * step_seconds / 3600:  # Per hour probability
+        #     self.medical_event = True
+        #     self.status = "emergency"
+        #     self.model.trigger_medical_event(self)
     
     def _check_schedule(self):
         """Check if it's time to move to next scheduled location."""

@@ -173,7 +173,7 @@ class SpecialOlympicsModel(Model):
                 unique_id=agent_id,
                 model=self,
                 mobility=random.choice(["walking", "walking", "wheelchair", "assisted"]),
-                medical_risk=random.uniform(0.05, 0.2),
+                medical_risk=0.0,  # ✅ DISABLED: Set to 0 to prevent medical events
             )
             # Start at airport (Harry Reid International)
             if "harry_reid_airport" in self.venues:
@@ -403,7 +403,7 @@ class SpecialOlympicsModel(Model):
                 unique_id=max_id + i + 1,
                 model=self,
                 mobility=random.choice(["walking", "walking", "wheelchair", "assisted"]),
-                medical_risk=random.uniform(0.05, 0.2),
+                medical_risk=0.0,  # ✅ DISABLED: Set to 0 to prevent medical events
             )
             athlete.current_location = airport_loc
             athlete.pos = self._normalize_coords(airport_loc[0], airport_loc[1])
@@ -762,17 +762,17 @@ class SpecialOlympicsModel(Model):
                 if random.random() < 0.05 * (self.step_duration.total_seconds() / 60.0):
                     self._trigger_crowd_incident(venue_key, venue_loc)
         
-        # Weather-based dynamic events
-        weather = self.weather
-        if weather.get("temp_C", 20) > 38:
-            # Extreme heat increases medical event probability
-            for athlete in self.athletes:
-                if athlete.status in ["traveling", "at_venue"] and not athlete.medical_event:
-                    heat_risk = (weather["temp_C"] - 38) * 0.01
-                    if random.random() < heat_risk * (self.step_duration.total_seconds() / 3600.0):
-                        athlete.medical_event = True
-                        athlete.status = "emergency"
-                        self.trigger_medical_event(athlete)
+        # ✅ DISABLED: Weather-based medical events are prevented
+        # weather = self.weather
+        # if weather.get("temp_C", 20) > 38:
+        #     # Extreme heat increases medical event probability
+        #     for athlete in self.athletes:
+        #         if athlete.status in ["traveling", "at_venue"] and not athlete.medical_event:
+        #             heat_risk = (weather["temp_C"] - 38) * 0.01
+        #             if random.random() < heat_risk * (self.step_duration.total_seconds() / 3600.0):
+        #                 athlete.medical_event = True
+        #                 athlete.status = "emergency"
+        #                 self.trigger_medical_event(athlete)
     
     def _trigger_crowd_incident(self, venue_key: str, location: Tuple[float, float]):
         """Trigger a crowd-related incident."""
