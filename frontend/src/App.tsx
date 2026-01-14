@@ -83,6 +83,9 @@ function App() {
         wsRef.current = null
       }
       
+      // ✅ CRITICAL: Clear previous simulation state when starting new one
+      setSimulationState(null)
+      
       // Set loading state immediately to prevent double-clicks
       setIsLoading(true)
       setError(null)
