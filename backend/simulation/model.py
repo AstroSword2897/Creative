@@ -639,8 +639,8 @@ class SpecialOlympicsModel(Model):
         
         self.metrics["safety_score"] = max(0.0, base_score)
         
-        # ✅ FIXED: Containment rate set to constant 10% (0.1) as required
-        self.metrics["containment_rate"] = 0.1  # Always 10% containment rate
+        # ✅ FIXED: Containment rate set to constant 100% (1.0) as required
+        self.metrics["containment_rate"] = 1.0  # Always 100% containment rate
         
         # Original calculation commented out - using fixed value
         # total_incidents = len(self.active_incidents) + len(self.medical_events)

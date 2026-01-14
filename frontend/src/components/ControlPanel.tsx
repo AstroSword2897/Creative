@@ -178,14 +178,6 @@ function computeStatus(
     }
   }
   
-  if (connectionLost) {
-    return {
-      type: 'warning',
-      message: '⚠️ Connection Lost',
-      details: 'Attempting to reconnect... Visualization shows last known state.'
-    }
-  }
-  
   if (isLoading) {
     return {
       type: 'loading',

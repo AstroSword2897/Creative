@@ -234,6 +234,20 @@ function App() {
           setConnectionLost(false)
         }
         
+        // ✅ ENHANCED: Handle connection confirmation message
+        ws.addEventListener('message', (event) => {
+          try {
+            const message = JSON.parse(event.data)
+            if (message.type === 'connected') {
+              if (DEBUG_MODE) {
+                console.log('✅ WebSocket connection confirmed:', message.message)
+              }
+            }
+          } catch (e) {
+            // Not a JSON message or not a connection confirmation, continue normal processing
+          }
+        }, { once: true })
+        
         ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data)

@@ -546,8 +546,13 @@ async def websocket_stream(websocket: WebSocket, run_id: str):
                     await asyncio.sleep(sleep_time)
                 
                 # ✅ ENHANCED: Ensure WebSocket connection is still alive
-                if websocket.client_state != 1:  # 1 = WebSocketState.CONNECTED
-                    print(f"⚠️ WebSocket disconnected for run {run_id}, stopping stream")
+                try:
+                    # Check connection state - WebSocketState.CONNECTED = 1
+                    if hasattr(websocket, 'client_state') and websocket.client_state != 1:
+                        print(f"⚠️ WebSocket disconnected for run {run_id}, stopping stream")
+                        break
+                except Exception as e:
+                    print(f"⚠️ Error checking WebSocket state for run {run_id}: {e}")
                     break
                     
             except WebSocketDisconnect:
